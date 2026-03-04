@@ -1,0 +1,13 @@
+typedef NTSTATUS(WINAPI *pSamEnumerateUsersInDomain)(IN SAMPR_HANDLE DomainHandle, IN OUT PDWORD EnumerationContext, IN DWORD UserAccountControl, OUT PSAMPR_RID_ENUMERATION* Buffer, IN DWORD PreferedMaximumLength, OUT PDWORD CountReturned);
+
+typedef NTSTATUS(WINAPI *pSamEnumerateDomainsInSamServer)(IN SAMPR_HANDLE ServerHandle, OUT DWORD * EnumerationContext, OUT PSAMPR_RID_ENUMERATION* Buffer, IN DWORD PreferedMaximumLength, OUT DWORD * CountReturned);
+
+typedef NTSTATUS(WINAPI *pLsaLookupAuthenticationPackage)(
+       HANDLE      LsaHandle,
+       PLSA_STRING PackageName,
+       PULONG      AuthenticationPackage
+);
+
+
+typedef NTSTATUS(WINAPI *pI_NetServerTrustPasswordsGet)(IN LOGONSRV_HANDLE TrustedDcName, IN wchar_t* AccountName, IN NETLOGON_SECURE_CHANNEL_TYPE SecureChannelType, IN wchar_t* ComputerName, IN PNETLOGON_AUTHENTICATOR Authenticator, OUT PNETLOGON_AUTHENTICATOR ReturnAuthenticator, OUT PENCRYPTED_NT_OWF_PASSWORD EncryptedNewOwfPassword, OUT PENCRYPTED_NT_OWF_PASSWORD EncryptedOldOwfPassword);
+

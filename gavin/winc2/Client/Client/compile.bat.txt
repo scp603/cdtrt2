@@ -1,0 +1,21 @@
+@echo off
+setlocal
+
+:: Change these if needed
+set PROJECT_NAME=client
+set SRC=client.cpp
+set OUT_DIR=.\x64\Debug
+set ARCH=x64
+
+:: Compiler flags
+set CFLAGS=/nologo /std:c++17 /O2 /EHsc /W3 /MD /DVERBOSE /Zi
+set INCLUDES=/I. /Iinclude
+set LIBS=ws2_32.lib wininet.lib shell32.lib
+
+:: Create output directory if it doesn't exist
+if not exist %OUT_DIR% mkdir %OUT_DIR%
+
+:: Build
+cl %SRC% /Fe%OUT_DIR%\%PROJECT_NAME%.exe %CFLAGS% %INCLUDES% %LIBS%
+
+pause

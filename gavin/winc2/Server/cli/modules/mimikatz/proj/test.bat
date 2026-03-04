@@ -1,0 +1,1 @@
+..\DefenderCheck.exe x64\mimikatz.exe
