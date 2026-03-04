@@ -1,4 +1,4 @@
-
+#!/usr/bin/env bash
 whiteteam_user=""
 
 find / -name ".bashrc" 2>/dev/null | while read -r bashrc; do
