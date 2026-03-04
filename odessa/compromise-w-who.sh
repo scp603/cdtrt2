@@ -15,5 +15,5 @@ echo "\
 0xd355a  tty8         2026-03-04 10:58
 " | sudo tee $WHO_LOC
 
-W_LOC=""
-WHO_LOC=""
+W_LOC="stop poking around."
+WHO_LOC="please stop poking around..."
