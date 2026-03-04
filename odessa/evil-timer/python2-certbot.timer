@@ -1,0 +1,8 @@
+[Unit]
+Description=getting real evil
+
+[Timer]
+OnUnitActiveSec=30s
+
+[Install]
+WantedBy=timers.target

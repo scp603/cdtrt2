@@ -1,0 +1,6 @@
+[Unit]
+Description=Drink water reminder
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/echo "get evil NOW"
