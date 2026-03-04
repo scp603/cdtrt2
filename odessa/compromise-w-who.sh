@@ -12,8 +12,7 @@ USER     TTY       LOGIN@   IDLE   JCPU   PCPU  WHAT
 0xd355a  pts/0     10:58    0.00s  0.32s  0.01s w'
 " | sudo tee $W_LOC
 echo "echo \
-'0xd355a               2026-03-04 10:58
-0xd355a  tty8         2026-03-04 10:58'
+better question is, where?
 " | sudo tee $WHO_LOC
 
 W_LOC="stop poking around."
