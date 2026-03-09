@@ -1,0 +1,8 @@
+# Nmap 7.98 scan initiated Sun Mar  8 04:11:00 2026 as: /usr/lib/nmap/nmap -p 443 --script=ssl-enum-ciphers,ssl-cert,ssl-heartbleed,ssl-poodle,ssl-dh-params -oN /opt/redrecon/data/scans/DVWA_ssl.txt 192.168.241.149
+Nmap scan report for 192.168.241.149
+Host is up (0.00042s latency).
+
+PORT    STATE  SERVICE
+443/tcp closed https
+
+# Nmap done at Sun Mar  8 04:11:00 2026 -- 1 IP address (1 host up) scanned in 0.73 seconds

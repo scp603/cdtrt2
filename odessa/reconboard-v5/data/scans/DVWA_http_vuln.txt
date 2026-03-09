@@ -1,0 +1,33 @@
+# Nmap 7.98 scan initiated Sun Mar  8 04:10:57 2026 as: /usr/lib/nmap/nmap -p 80,443,8080,8443 --script=http-vuln*,http-enum,http-headers,http-methods,http-shellshock -oN /opt/redrecon/data/scans/DVWA_http_vuln.txt 192.168.241.149
+Nmap scan report for 192.168.241.149
+Host is up (0.00040s latency).
+
+PORT     STATE  SERVICE
+80/tcp   open   http
+| http-headers: 
+|   Date: Sun, 08 Mar 2026 04:10:58 GMT
+|   Server: Apache/2.4.25 (Debian)
+|   Set-Cookie: PHPSESSID=kddcnb3an3i4ugdcu7k30935p2; path=/
+|   Expires: Tue, 23 Jun 2009 12:00:00 GMT
+|   Cache-Control: no-cache, must-revalidate
+|   Pragma: no-cache
+|   Set-Cookie: PHPSESSID=kddcnb3an3i4ugdcu7k30935p2; path=/
+|   Set-Cookie: security=low
+|   Connection: close
+|   Content-Type: text/html;charset=utf-8
+|   
+|_  (Request type: HEAD)
+| http-methods: 
+|_  Supported Methods: GET HEAD POST OPTIONS
+| http-enum: 
+|   /login.php: Possible admin folder
+|   /robots.txt: Robots file
+|   /.gitignore: Revision control ignore file
+|   /config/: Potentially interesting directory w/ listing on 'apache/2.4.25 (debian)'
+|   /docs/: Potentially interesting directory w/ listing on 'apache/2.4.25 (debian)'
+|_  /external/: Potentially interesting directory w/ listing on 'apache/2.4.25 (debian)'
+443/tcp  closed https
+8080/tcp closed http-proxy
+8443/tcp closed https-alt
+
+# Nmap done at Sun Mar  8 04:10:59 2026 -- 1 IP address (1 host up) scanned in 1.14 seconds

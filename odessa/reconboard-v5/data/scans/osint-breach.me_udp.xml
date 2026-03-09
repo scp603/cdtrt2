@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///usr/share/nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.98 scan initiated Sun Mar  8 04:10:46 2026 as: /usr/lib/nmap/nmap -sU -&#45;top-ports 50 -T4 -oN /opt/redrecon/data/scans/osint-breach.me_udp.txt -oX /opt/redrecon/data/scans/osint-breach.me_udp.xml 178.156.211.211 -->
+<nmaprun scanner="nmap" args="/usr/lib/nmap/nmap -sU -&#45;top-ports 50 -T4 -oN /opt/redrecon/data/scans/osint-breach.me_udp.txt -oX /opt/redrecon/data/scans/osint-breach.me_udp.xml 178.156.211.211" start="1772943046" startstr="Sun Mar  8 04:10:46 2026" version="7.98" xmloutputversion="1.05">
+<scaninfo type="udp" protocol="udp" numservices="50" services="7,53,67-69,80,111,123,135-139,161-162,445,500,514,518,520,593,626,631,996-999,1025-1027,1433-1434,1645-1646,1701,1812,1900,2048-2049,2222,3283,3456,4500,5060,5353,20031,32768,49152-49154"/>
+<verbose level="0"/>
+<debugging level="0"/>
+<hosthint><status state="up" reason="unknown-response" reason_ttl="0"/>
+<address addr="178.156.211.211" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+</hosthint>
+<host starttime="1772943046" endtime="1772943048"><status state="up" reason="syn-ack" reason_ttl="51"/>
+<address addr="178.156.211.211" addrtype="ipv4"/>
+<hostnames>
+<hostname name="static.211.211.156.178.clients.your-server.de" type="PTR"/>
+</hostnames>
+<ports><extraports state="open|filtered" count="50">
+<extrareasons reason="no-response" count="50" proto="udp" ports="7,53,67-69,80,111,123,135-139,161-162,445,500,514,518,520,593,626,631,996-999,1025-1027,1433-1434,1645-1646,1701,1812,1900,2048-2049,2222,3283,3456,4500,5060,5353,20031,32768,49152-49154"/>
+</extraports>
+</ports>
+<times srtt="18028" rttvar="13575" to="100000"/>
+</host>
+<runstats><finished time="1772943048" timestr="Sun Mar  8 04:10:48 2026" summary="Nmap done at Sun Mar  8 04:10:48 2026; 1 IP address (1 host up) scanned in 1.80 seconds" elapsed="1.80" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>

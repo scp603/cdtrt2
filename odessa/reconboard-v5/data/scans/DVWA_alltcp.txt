@@ -1,0 +1,9 @@
+# Nmap 7.98 scan initiated Sun Mar  8 04:10:19 2026 as: /usr/lib/nmap/nmap -sS -p- -T4 --min-rate=1000 -oN /opt/redrecon/data/scans/DVWA_alltcp.txt -oX /opt/redrecon/data/scans/DVWA_alltcp.xml 192.168.241.149
+Nmap scan report for 192.168.241.149
+Host is up (0.00083s latency).
+Not shown: 65533 closed tcp ports (reset)
+PORT   STATE SERVICE
+22/tcp open  ssh
+80/tcp open  http
+
+# Nmap done at Sun Mar  8 04:10:23 2026 -- 1 IP address (1 host up) scanned in 3.98 seconds

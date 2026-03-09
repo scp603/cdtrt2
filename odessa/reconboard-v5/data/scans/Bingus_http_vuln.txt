@@ -1,0 +1,2 @@
+# Nmap 7.98 scan initiated Sun Mar  8 04:19:59 2026 as: /usr/lib/nmap/nmap -p 80,443,8080,8443 --script=http-vuln*,http-enum,http-headers,http-methods,http-shellshock -oN /opt/redrecon/data/scans/Bingus_http_vuln.txt 10.17.76.58
+# Nmap done at Sun Mar  8 04:20:03 2026 -- 1 IP address (0 hosts up) scanned in 3.17 seconds

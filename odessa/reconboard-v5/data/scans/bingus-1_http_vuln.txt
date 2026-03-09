@@ -1,0 +1,26 @@
+# Nmap 7.98 scan initiated Sun Mar  8 04:13:17 2026 as: /usr/lib/nmap/nmap -p 80,443,8080,8443 --script=http-vuln*,http-enum,http-headers,http-methods,http-shellshock -oN /opt/redrecon/data/scans/bingus-1_http_vuln.txt 172.24.139.24
+Nmap scan report for 172.24.139.24
+Host is up (0.000020s latency).
+
+PORT     STATE    SERVICE
+80/tcp   filtered http
+443/tcp  filtered https
+8080/tcp filtered http-proxy
+8443/tcp open     https-alt
+| http-headers: 
+|   Server: Werkzeug/3.1.5 Python/3.13.12
+|   Date: Sun, 08 Mar 2026 04:13:19 GMT
+|   Content-Type: text/html; charset=utf-8
+|   Content-Length: 2540
+|   Connection: close
+|   
+|_  (Request type: HEAD)
+| http-methods: 
+|_  Supported Methods: GET HEAD POST OPTIONS
+|_http-vuln-cve2017-1001000: ERROR: Script execution failed (use -d to debug)
+| http-vuln-cve2010-0738: 
+|_  /jmx-console/: Authentication was not required
+| http-enum: 
+|_  /api/: Potentially interesting folder (401 UNAUTHORIZED)
+
+# Nmap done at Sun Mar  8 04:13:34 2026 -- 1 IP address (1 host up) scanned in 16.59 seconds

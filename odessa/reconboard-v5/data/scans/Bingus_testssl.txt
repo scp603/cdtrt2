@@ -1,0 +1,11 @@
+
+ Start 2026-03-08 04:20:02        -->> 10.17.76.58:443 (10.17.76.58) <<--
+
+ rDNS (10.17.76.58):     host.docker.internal. gateway.docker.internal./usr/bin/testssl: connect: Connection timed out
+/usr/bin/testssl: line 12076: /dev/tcp/10.17.76.58/443: Connection timed out
+ Oops: TCP connect problem
+
+Unable to open a socket to 10.17.76.58:443. 
+Fatal error: Can't connect to "10.17.76.58:443"
+Make sure a firewall is not between you and your scanning target!
+

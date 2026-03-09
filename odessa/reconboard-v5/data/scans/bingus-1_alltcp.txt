@@ -1,0 +1,13 @@
+# Nmap 7.98 scan initiated Sun Mar  8 04:10:23 2026 as: /usr/lib/nmap/nmap -sS -p- -T4 --min-rate=1000 -oN /opt/redrecon/data/scans/bingus-1_alltcp.txt -oX /opt/redrecon/data/scans/bingus-1_alltcp.xml 172.24.139.24
+Nmap scan report for 172.24.139.24
+Host is up (0.000060s latency).
+Not shown: 65529 filtered tcp ports (no-response)
+PORT      STATE SERVICE
+22/tcp    open  ssh
+3000/tcp  open  ppp
+8443/tcp  open  https-alt
+9090/tcp  open  zeus-admin
+9100/tcp  open  jetdirect
+47507/tcp open  unknown
+
+# Nmap done at Sun Mar  8 04:12:27 2026 -- 1 IP address (1 host up) scanned in 124.16 seconds

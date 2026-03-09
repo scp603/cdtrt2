@@ -1,0 +1,7 @@
+# Nmap 7.98 scan initiated Sun Mar  8 04:16:59 2026 as: /usr/lib/nmap/nmap -sU --top-ports 50 -T4 -oN /opt/redrecon/data/scans/Bingus-1_udp.txt -oX /opt/redrecon/data/scans/Bingus-1_udp.xml 172.24.139.24
+Nmap scan report for 172.24.139.24
+Host is up (0.0000060s latency).
+All 50 scanned ports on 172.24.139.24 are in ignored states.
+Not shown: 50 closed udp ports (port-unreach)
+
+# Nmap done at Sun Mar  8 04:17:00 2026 -- 1 IP address (1 host up) scanned in 0.65 seconds
