@@ -19,7 +19,7 @@ done
 
 echo ""
 echo "  Building images..."
-docker compose build
+docker compose build --no-cache
 
 echo ""
 echo "  Launching with $workers worker(s)..."
