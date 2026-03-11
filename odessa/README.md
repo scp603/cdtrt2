@@ -24,3 +24,4 @@
 - Multiple ssh binaries running on different ports
 - install pihole to sinkhole github
 - 20 Docker binaries all running as hidden services
+- Fix the install-yay script
