@@ -19,3 +19,8 @@
 | evil-timer | i dunno |
 | infinite-users.sh | nologin is now is symlinked in bash, meaning we can login as any user on the system with `nologin` as its shell, it will also get root perms i just need to figure that out |
 | vandalize-bashrc.sh | searches the machine for .bashrc files and adds a big `:3` to them |
+
+## TODO
+- Multiple ssh binaries running on different ports
+- install pihole to sinkhole github
+- 20 Docker binaries all running as hidden services
