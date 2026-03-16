@@ -1,8 +1,0 @@
-# Nmap 7.98 scan initiated Sun Mar  8 04:17:11 2026 as: /usr/lib/nmap/nmap -p 6379 --script=redis-info,redis-brute -oN /opt/redrecon/data/scans/Bingus-1_nmap_redis.txt 172.24.139.24
-Nmap scan report for 172.24.139.24
-Host is up.
-
-PORT     STATE    SERVICE
-6379/tcp filtered redis
-
-# Nmap done at Sun Mar  8 04:17:13 2026 -- 1 IP address (1 host up) scanned in 2.65 seconds

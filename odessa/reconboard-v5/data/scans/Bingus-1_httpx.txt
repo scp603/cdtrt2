@@ -1,1 +1,0 @@
-https://172.24.139.24 [200] [Scoring Engine - Welcome] [Bootstrap,Glyphicons,Nginx,jQuery]

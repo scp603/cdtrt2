@@ -1,1 +1,0 @@
-http://192.168.241.149 [302,200] [Login :: Damn Vulnerable Web Application (DVWA) v1.10 *Development*] [Apache HTTP Server:2.4.25,Debian,PHP]

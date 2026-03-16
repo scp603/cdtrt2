@@ -1,8 +1,0 @@
-# Nmap 7.98 scan initiated Sun Mar  8 04:13:20 2026 as: /usr/lib/nmap/nmap -p 443 --script=ssl-enum-ciphers,ssl-cert,ssl-heartbleed,ssl-poodle,ssl-dh-params -oN /opt/redrecon/data/scans/bingus-1_ssl.txt 172.24.139.24
-Nmap scan report for 172.24.139.24
-Host is up.
-
-PORT    STATE    SERVICE
-443/tcp filtered https
-
-# Nmap done at Sun Mar  8 04:13:22 2026 -- 1 IP address (1 host up) scanned in 2.63 seconds

@@ -1,2 +1,0 @@
-# Nmap 7.98 scan initiated Sun Mar  8 04:19:58 2026 as: /usr/lib/nmap/nmap -sS -sV -sC -O -T4 -oN /opt/redrecon/data/scans/Bingus_quick.txt -oX /opt/redrecon/data/scans/Bingus_quick.xml 10.17.76.58
-# Nmap done at Sun Mar  8 04:20:00 2026 -- 1 IP address (0 hosts up) scanned in 2.22 seconds
