@@ -1,0 +1,26 @@
+---
+# Phase 1 — Confirm connectivity to all targets before doing anything
+# Run with: ansible-playbook playbooks/01_ping.yml -l linux
+#
+# If a host fails here, fix SSH access before proceeding.
+# Common issues:
+#   - Jump host key expired  → re-auth with sshjump@ssh.cyberrange.rit.edu
+#   - Wrong ansible_user     → check inventory.ini
+#   - Host not reachable     → confirm VPN/range is up
+
+- name: Connectivity check — all targets
+  hosts: linux
+  gather_facts: false
+
+  tasks:
+    - name: Ping
+      ping:
+
+    - name: Confirm we have a shell
+      command: id
+      register: id_out
+      changed_when: false
+
+    - name: Print access context
+      debug:
+        msg: "{{ inventory_hostname }} — {{ id_out.stdout }}"

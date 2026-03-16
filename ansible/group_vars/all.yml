@@ -1,0 +1,12 @@
+---
+# Operator machine — where reconboard runs and shells call back to
+# Set these before running any plays
+lhost: "FILL_ME"
+lport: 4444
+
+# Staging dir — scripts get uploaded here on targets
+rt_staging: /tmp/.pkgcache
+
+# Reconboard
+reconboard_port: 8443
+reconboard_workers: 3

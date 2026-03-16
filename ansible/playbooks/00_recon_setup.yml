@@ -1,0 +1,48 @@
+---
+# Phase 0 — Start reconboard-v5 on the operator machine
+# Run with: ansible-playbook playbooks/00_recon_setup.yml -c local -i localhost,
+#
+# This does NOT require target access. Run this first, before touching any boxes.
+
+- name: Reconboard v5 — operator setup
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    reconboard_dir: "{{ playbook_dir }}/../../odessa/reconboard-v5"
+
+  tasks:
+    - name: Check Docker is available
+      command: docker info
+      register: docker_check
+      failed_when: docker_check.rc != 0
+      changed_when: false
+
+    - name: Check Docker Compose is available
+      command: docker compose version
+      register: compose_check
+      failed_when: compose_check.rc != 0
+      changed_when: false
+
+    - name: Build reconboard images
+      command: docker compose build --no-cache
+      args:
+        chdir: "{{ reconboard_dir }}"
+      register: build_result
+      changed_when: true
+
+    - name: Launch reconboard with {{ reconboard_workers }} worker(s)
+      command: docker compose up -d --scale worker={{ reconboard_workers }}
+      args:
+        chdir: "{{ reconboard_dir }}"
+      environment:
+        REDRECON_PASSWORD: "{{ reconboard_password | default('changeme') }}"
+      changed_when: true
+
+    - name: Show access info
+      debug:
+        msg:
+          - "Reconboard is up"
+          - "Open: http://localhost:{{ reconboard_port }}"
+          - "Workers: {{ reconboard_workers }}"
+          - "Scale up: docker compose up -d --scale worker=N (from reconboard-v5/)"

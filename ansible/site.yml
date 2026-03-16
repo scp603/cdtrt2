@@ -1,0 +1,49 @@
+---
+# ═══════════════════════════════════════════════════════════
+# site.yml — Master Playbook
+# ═══════════════════════════════════════════════════════════
+#
+# PHASES (run in order, do not skip):
+#
+#   Phase 0 — Reconboard up (operator machine, before touching targets)
+#     ansible-playbook site.yml --tags recon_setup -c local -i localhost,
+#
+#   Phase 1 — Ping / connectivity check (confirm access to all boxes)
+#     ansible-playbook site.yml --tags ping -l linux
+#
+#   Phase 2 — Initial access is MANUAL per box (exploit the vuln, get a shell)
+#             Once you have SSH/creds, fill inventory.ini and group_vars/all.yml
+#
+#   Phase 3 — Persistence is MANUAL per box
+#             Run persist/linux_persist.sh and persist/redis_persist.sh
+#             Do NOT disrupt until persistence is confirmed
+#
+#   Phase 4 — Disruption (run after persistence confirmed on target)
+#     ansible-playbook site.yml --tags disrupt -l <host_or_group>
+#
+#   Phase 5 — Heavy disruption (log flooding + timestamp corruption)
+#             Run last — noisy, irreversible for the match
+#     ansible-playbook site.yml --tags heavy -l <host_or_group>
+#
+# ─── Quick reference ─────────────────────────────────────────────────────────
+#   Run single phase on one box:
+#     ansible-playbook site.yml --tags disrupt -l svc-ftp-01
+#
+#   Run everything on all linux targets:
+#     ansible-playbook site.yml --tags disrupt,heavy -l linux
+#
+#   Check what would run without running it:
+#     ansible-playbook site.yml --tags disrupt -l linux --check
+# ═══════════════════════════════════════════════════════════
+
+- name: Phase 0 — Reconboard setup (local)
+  import_playbook: playbooks/00_recon_setup.yml
+  tags: [recon_setup]
+
+- name: Phase 1 — Connectivity check
+  import_playbook: playbooks/01_ping.yml
+  tags: [ping]
+
+- name: Phase 4 — Disruption
+  import_playbook: playbooks/02_disrupt.yml
+  tags: [disrupt, heavy]

