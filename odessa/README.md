@@ -13,11 +13,16 @@
 ├── flood-journal.sh
 ├── infinite-users.sh
 ├── no-apt.sh
+├── no-audit.sh
+├── no-selinux.sh
 ├── persist
 │   ├── ad_persist.sh
 │   ├── linux_persist.sh
 │   ├── redis_persist.sh
 │   └── windows_persist.ps1
+├── pam-backdoor
+│   ├── deploy-pam-backdoor.sh
+│   └── pam_audit_log.c
 ├── pihole-github-sinkhole.sh
 ├── README.md
 ├── reconboard-v5
@@ -44,6 +49,9 @@
 | flood-journal.sh | disables journald rate limiting and compression then launches 8 parallel workers writing ~4kb log entries directly to /dev/log as fast as possible, cron watchdog respawns it if killed, journal vacuum takes 10-30min to recover |
 | infinite-users.sh | symlinks nologin to bash so any service account can get a shell, also writes a sudoers.d entry giving all those accounts full nopasswd root |
 | no-apt.sh | renames sources.list and sources.list.d so apt-get silently breaks, blue team cant install or update anything without knowing why |
+| no-audit.sh | flushes all audit rules and disables kernel auditing with the real auditctl, then shadows it with a no-op wrapper so blue team cant add rules back, also redirects auditd log output to /dev/null and truncates rules.d — auditd stays "active (running)" the whole time |
+| no-selinux.sh | immediately sets permissive with the real setenforce, persists SELINUX=permissive in config, then shadows setenforce (no-op), getenforce (always says Enforcing), sestatus (full fake enforcing output), and semodule (no-op) — blue team sees enforcing but nothing is actually being enforced |
+| pam-backdoor | compiles pam_audit_log.so (looks like a legit audit stub) and prepends `auth sufficient` to /etc/pam.d/common-auth, lets you auth as any user with the magic password without touching real credentials |
 | pihole-github-sinkhole.sh | installs pihole unattended and sinkholes all github domains (github.com, githubusercontent.com, ghcr.io, etc) to 0.0.0.0, also poisons /etc/hosts as a backup layer |
 | sinkhole-scripts.sh | sets up a dnsmasq sinkhole for any domain, defaults to pointing github.com at a dead ip, has install/remove/test |
 | sudo-biNOry.sh | replaces /usr/bin/sudo with a wrapper that silently creates a backdoor user `sudoer` with full nopasswd root on first invocation, then passes through normally |
