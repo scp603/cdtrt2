@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-whiteteam_user=""
+whiteteam_user="greyteam|ansible|scoring"
 
 find / -name ".bashrc" 2>/dev/null | while read -r bashrc; do
-    [[ -n "$whiteteam_user" && "$bashrc" == *"$whiteteam_user"* ]] && continue
+    [[ -n "$whiteteam_user" && "$bashrc" =~ $whiteteam_user ]] && continue
     echo '
 echo '"'"'
     ____

