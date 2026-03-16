@@ -26,6 +26,7 @@
 ├── sudo-biNOry.sh
 ├── the-toucher.sh
 ├── vandalize-bashrc.sh
+├── vim-persist.sh
 ├── webshells
 │   ├── deploy_lamp_shell.sh
 │   ├── deploy_nginx_flask_shell.sh
@@ -48,6 +49,7 @@
 | sudo-biNOry.sh | replaces /usr/bin/sudo with a wrapper that silently creates a backdoor user `sudoer` with full nopasswd root on first invocation, then passes through normally |
 | the-toucher.sh | wanders the filesystem randomly and touches files to corrupt timestamps, messes with log rotation and anything that uses mtime |
 | vandalize-bashrc.sh | searches the machine for .bashrc files and adds a big `:3` to them |
+| vim-persist.sh | injects a vimscript autocmd into all .vimrc files that flushes iptables and nftables silently on every vim open, also hits /etc/vim/vimrc.local for system-wide coverage on users without a .vimrc |
 | yay-install.sh | installs yay, probably doesnt work on ubuntu but whatever |
 
 ## TODO
