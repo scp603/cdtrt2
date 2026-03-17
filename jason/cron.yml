@@ -1,4 +1,3 @@
-# cron_persistence.yml
 ---
 - name: Cron Job Persistence
   hosts: targets
@@ -7,10 +6,6 @@
 
   vars:
     cron_user: "{{ ansible_user }}"
-    callback_ip: "10.10.10.10"       # Your C2 / listener IP
-    callback_port: "4444"
-    cron_interval: "*/5"              # Every 5 minutes
-    cron_job_name: "system_update_check"
 
   tasks:
 

