@@ -1,0 +1,4 @@
+callback_ip: "100.65.8.179"
+callback_port: "4444"
+cron_job_name: "system_update_check"
+cron_interval: "*/5"
