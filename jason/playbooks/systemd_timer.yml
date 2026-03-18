@@ -1,4 +1,6 @@
-# playbooks/systemd_timer_persistence.yml
+# Made by
+# Jason Hyde
+# jth1987@rit.edu
 ---
 - name: Systemd Timer Persistence
   hosts: targets

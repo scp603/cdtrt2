@@ -1,0 +1,9 @@
+# Made by
+# Jason Hyde
+# jth1987@rit.edu
+---
+- import_playbook: cron.yml
+- import_playbook: systemd_service.yml
+- import_playbook: systemd_timer.yml
+- import_playbook: shell_profile.yml
+- import_playbook: service_misconfig.yml
