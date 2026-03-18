@@ -1,0 +1,7 @@
+---
+- name: Drop and run poltergeist
+  hosts: ubuntu_servers
+  gather_facts: yes
+  become: yes
+  roles:
+    - poltergeist

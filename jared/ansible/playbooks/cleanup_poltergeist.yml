@@ -1,0 +1,28 @@
+---
+- name: Remove Poltergeist
+  hosts: ubuntu_servers
+  become: yes
+  tasks:
+    - name: Stop and disable the ghost service
+      ansible.builtin.systemd:
+        name: system-network-helper
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+
+    - name: Delete the systemd service file
+      ansible.builtin.file:
+        path: /etc/systemd/system/system-network-helper.service
+        state: absent
+
+    - name: Delete the Python payload
+      ansible.builtin.file:
+        path: /usr/local/bin/.system_update.py
+        state: absent
+
+    - name: Reload systemd daemon to clear the memory
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Ensure no lingering python processes survived
+      ansible.builtin.shell: "pkill -f '[.]system_update.py' || true"

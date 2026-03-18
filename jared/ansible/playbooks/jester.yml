@@ -1,0 +1,7 @@
+---
+- name: Deploy the terminal jester annoyer
+  hosts: ubuntu_servers
+  gather_facts: yes
+  become: yes
+  roles:
+    - jester

@@ -1,0 +1,28 @@
+---
+- name: Remove Network Decoy
+  hosts: ubuntu_servers
+  become: yes
+  tasks:
+    - name: Stop and disable the fake diagnostics service
+      ansible.builtin.systemd:
+        name: systemd-network-diag
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+
+    - name: Delete the systemd service file
+      ansible.builtin.file:
+        path: /etc/systemd/system/systemd-network-diag.service
+        state: absent
+
+    - name: Delete the decoy script
+      ansible.builtin.file:
+        path: /usr/libexec/systemd-network-diag
+        state: absent
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Kill any lingering nc (netcat) connections spawned by the decoy
+      ansible.builtin.shell: "pkill nc || true"

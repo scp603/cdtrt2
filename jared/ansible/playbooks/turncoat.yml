@@ -1,0 +1,6 @@
+---
+- name: Drop and deploy turncoats
+  hosts: ubuntu_servers
+  become: yes
+  roles:
+    - turncoat

@@ -1,0 +1,21 @@
+---
+- name: Remove Phantom Network Infrastructure
+  hosts: ubuntu_servers
+  become: yes
+  vars:
+    # This must match the namespace name you used in your deployment script
+    namespace: "phantom01"
+
+  tasks:
+    - name: Identify and terminate all processes running inside the namespace
+      ansible.builtin.shell: |
+        PIDS=$(ip netns pids {{ namespace }})
+        if [ -n "$PIDS" ]; then
+          kill -9 $PIDS
+        fi
+      # We ignore errors in case the namespace is already gone or empty
+      ignore_errors: yes
+
+    - name: Obliterate the hidden network namespace and its virtual interfaces
+      ansible.builtin.command: ip netns delete {{ namespace }}
+      ignore_errors: yes

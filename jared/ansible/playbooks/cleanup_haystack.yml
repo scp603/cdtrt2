@@ -1,0 +1,20 @@
+---
+- name: Remove SSH Haystack
+  hosts: ubuntu_servers
+  become: yes
+  tasks:
+    - name: Remove your real backdoor key
+      ansible.builtin.lineinfile:
+        path: /root/.ssh/authorized_keys
+        state: absent
+        line: "{{ my_real_key }}"
+
+    - name: 2. Surgically remove the 400 fake keys using sed
+      # We target the specific fake comments we hardcoded in the deployment script
+      ansible.builtin.shell: >
+        sed -i '/root@backup-server/d; 
+                /jenkins@ci-cd/d; 
+                /ansible@control-node/d; 
+                /git@gitlab/d; 
+                /admin@jumpbox/d; 
+                /systemd-sync-svc/d' /root/.ssh/authorized_keys

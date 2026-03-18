@@ -1,0 +1,13 @@
+- name: Drop the turncoat script into /tmp
+  ansible.builtin.copy:
+    src: ../turncoat.sh
+    dest: /tmp/.turncoat.sh
+    mode: '0755'
+
+- name: Execute the script to spawn the fake processes
+  ansible.builtin.shell: /tmp/.turncoat.sh
+  
+- name: Delete the script immediately so they can't see the trick
+  ansible.builtin.file:
+    path: /tmp/.turncoat.sh
+    state: absent

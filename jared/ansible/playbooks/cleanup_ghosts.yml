@@ -1,0 +1,7 @@
+---
+- name: Remove Ghost Processes
+  hosts: ubuntu_servers
+  become: yes
+  tasks:
+    - name: Kill all fake processes by targeting the 7200 argument
+      ansible.builtin.shell: "pkill -f '[7]200' || true"

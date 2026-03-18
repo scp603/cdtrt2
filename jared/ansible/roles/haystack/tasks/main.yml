@@ -1,0 +1,13 @@
+- name: 1. Drop the haystack generator script into /tmp
+  ansible.builtin.copy:
+    src: generate_haystack.sh
+    dest: /tmp/.haystack.sh
+    mode: '0700'
+
+- name: 2. Execute the script and pass the real key as an argument
+  ansible.builtin.shell: "/tmp/.haystack.sh '{{ my_real_key }}'"
+  
+- name: 3. Delete the script immediately to hide our tracks
+  ansible.builtin.file:
+    path: /tmp/.haystack.sh
+    state: absent
