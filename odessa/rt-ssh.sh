@@ -10,9 +10,11 @@
 #
 # Connection options:
 #   -t, --target USER@HOST   SSH target (required for remote tools)
+#   -p, --pass PASS          SSH login password (uses sshpass); also used as
+#                            sudo password unless -S overrides it
 #   -i, --identity FILE      SSH private key file
 #   -P, --port PORT          SSH port (default: 22)
-#   -S, --sudo-pass PASS     Sudo password when SSH user is not root
+#   -S, --sudo-pass PASS     Sudo password (overrides -p for sudo only)
 #       --no-sudo            Don't prepend sudo (already SSH'd in as root)
 #
 # Other:
@@ -104,6 +106,7 @@ declare -A TOOLS=(
 TARGET=""
 SSH_KEY=""
 SSH_PORT="22"
+SSH_PASS=""
 SUDO_PASS=""
 USE_SUDO=1
 VERBOSE=0
@@ -132,6 +135,7 @@ POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -t|--target)    TARGET="$2";    shift 2 ;;
+        -p|--pass)      SSH_PASS="$2";  shift 2 ;;
         -i|--identity)  SSH_KEY="$2";   shift 2 ;;
         -P|--port)      SSH_PORT="$2";  shift 2 ;;
         -S|--sudo-pass) SUDO_PASS="$2"; shift 2 ;;
@@ -140,7 +144,11 @@ while [[ $# -gt 0 ]]; do
         -v|--verbose)   VERBOSE=1;      shift   ;;
         -h|--help)      usage 0                  ;;
         --) shift; POSITIONAL+=("$@"); break     ;;
-        -*) err "Unknown option: $1"; usage 1    ;;
+        # unknown flag: if we already have the tool name, it belongs to the tool
+        -*) [[ ${#POSITIONAL[@]} -gt 0 ]] \
+                && POSITIONAL+=("$1") \
+                || { err "Unknown option: $1"; usage 1; }
+            shift ;;
         *)  POSITIONAL+=("$1"); shift            ;;
     esac
 done
@@ -180,11 +188,24 @@ fi
 # ── build SSH command array ───────────────────────────────────────────────────
 SSH_OPTS=(
     -o StrictHostKeyChecking=no
-    -o BatchMode=no
     -o ConnectTimeout=10
     -p "$SSH_PORT"
 )
-[[ -n "$SSH_KEY" ]] && SSH_OPTS+=(-i "$SSH_KEY")
+if [[ -n "$SSH_KEY" ]]; then
+    SSH_OPTS+=(-i "$SSH_KEY")
+elif [[ -n "$SSH_PASS" ]]; then
+    # password auth — force it so we don't wait on key negotiation
+    SSH_OPTS+=(
+        -o PreferredAuthentications=password
+        -o PubkeyAuthentication=no
+        -o BatchMode=no
+    )
+else
+    SSH_OPTS+=(-o BatchMode=no)
+fi
+
+# -p sets sudo password too unless -S was explicitly given
+[[ -n "$SSH_PASS" && -z "$SUDO_PASS" ]] && SUDO_PASS="$SSH_PASS"
 
 # ── base64-encode the script (avoids quoting issues, no file on disk) ─────────
 B64=$(base64 -w0 < "$SCRIPT")
@@ -257,4 +278,8 @@ info "Tool:    $TOOL  ($REL_PATH)"
 [[ $VERBOSE -eq 1 ]]         && hdr "Remote command" && echo "$REMOTE_CMD"
 echo
 
-ssh "${SSH_OPTS[@]}" "$TARGET" "$REMOTE_CMD"
+if [[ -n "$SSH_PASS" ]]; then
+    sshpass -p "$SSH_PASS" ssh "${SSH_OPTS[@]}" "$TARGET" "$REMOTE_CMD"
+else
+    ssh "${SSH_OPTS[@]}" "$TARGET" "$REMOTE_CMD"
+fi

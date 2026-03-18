@@ -97,14 +97,13 @@ Documentation=https://systemd.io
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
 # busybox crond flags:
-#   -b  background (fork)
+#   -f  foreground (let systemd own the process)
 #   -c  custom spool directory
 #   -L  log file (/dev/null = silent)
 #   -l  log level 8 = only log errors
-ExecStart=${CROND_BIN} crond -b -c ${SPOOL_DIR} -L ${LOG_FILE} -l 8
-ExecStop=/bin/kill -QUIT \$MAINPID
+ExecStart=${CROND_BIN} crond -f -c ${SPOOL_DIR} -L ${LOG_FILE} -l 8
 Restart=always
 RestartSec=10
 User=root
