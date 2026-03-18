@@ -1,4 +1,3 @@
-# playbooks/systemd_service_persistence.yml
 ---
 - name: Systemd Service Persistence
   hosts: targets

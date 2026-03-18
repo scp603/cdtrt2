@@ -6,7 +6,6 @@
 
   tasks:
 
-    # --- CRON ---
     - name: Check cron script exists
       stat:
         path: /etc/cron_helper.sh
@@ -23,7 +22,6 @@
           - "Cron script:       {{ 'FOUND' if cron_script.stat.exists else 'MISSING' }}"
           - "Cron.d entry:      {{ 'FOUND' if cron_d.stat.exists else 'MISSING' }}"
 
-    # --- SYSTEMD TIMER ---
     - name: Check systemd timer exists
       stat:
         path: /etc/systemd/system/sys-network-check.timer
@@ -40,7 +38,6 @@
           - "Timer unit file:   {{ 'FOUND' if systemd_timer.stat.exists else 'MISSING' }}"
           - "Timer active:      {{ timer_active.stdout }}"
 
-    # --- SYSTEMD SERVICE ---
     - name: Check systemd service exists
       stat:
         path: /etc/systemd/system/sys-net-daemon.service
@@ -57,7 +54,6 @@
           - "Service unit file: {{ 'FOUND' if systemd_service.stat.exists else 'MISSING' }}"
           - "Service active:    {{ service_active.stdout }}"
 
-    # --- SHELL PROFILES ---
     - name: Check /etc/bash.bashrc injection
       shell: grep -c "{{ callback_ip }}" /etc/bash.bashrc
       register: bashrc_check
@@ -80,7 +76,6 @@
           - "/etc/profile:      {{ 'FOUND' if profile_check.rc == 0 else 'MISSING' }}"
           - "profile.d script:  {{ 'FOUND' if profiled_check.stat.exists else 'MISSING' }}"
 
-    # --- SSH MISCONFIG ---
     - name: Check sshd_config AuthorizedKeysFile line
       shell: grep -c ".cache" /etc/ssh/sshd_config
       register: sshd_check

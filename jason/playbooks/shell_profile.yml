@@ -1,4 +1,3 @@
-# playbooks/shell_profile_persistence.yml
 ---
 - name: Shell Profile Persistence
   hosts: targets

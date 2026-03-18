@@ -1,4 +1,3 @@
-# playbooks/systemd_timer_persistence.yml
 ---
 - name: Systemd Timer Persistence
   hosts: targets
