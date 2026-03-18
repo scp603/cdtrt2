@@ -1,3 +1,6 @@
+# Made by
+# Jason Hyde
+# jth1987@rit.edu
 ---
 - name: Verify All Persistence Mechanisms
   hosts: targets
