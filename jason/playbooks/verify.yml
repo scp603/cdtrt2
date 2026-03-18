@@ -59,12 +59,12 @@
 
     # --- SHELL PROFILES ---
     - name: Check /etc/bash.bashrc injection
-      shell: grep -c "callback" /etc/bash.bashrc
+      shell: grep -c "{{ callback_ip }}" /etc/bash.bashrc
       register: bashrc_check
       ignore_errors: yes
 
     - name: Check /etc/profile injection
-      shell: grep -c "callback" /etc/profile
+      shell: grep -c "{{ callback_ip }}" /etc/profile
       register: profile_check
       ignore_errors: yes
 
