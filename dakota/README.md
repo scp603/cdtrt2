@@ -6,18 +6,19 @@ AppLogger is a targeted information-gathering tool that records keystrokes while
 ## 2. Requirements & Dependencies
 * Target OS: Windows 10/11
 * Privileges: User-level execution
-* Libraries: `pynput`, `pywin32`, `requests`, `cryptography`
+* Libraries: `pynput`, `pywin32`, `requests`
 
 ## 3. Installation Instructions
 1. Clone the repository to the target system.
 2. Install dependencies: `pip install -r requirements.txt`
 3. Configure the `C2_URL` (ensure it is an HTTPS endpoint) and insert your symmetric encryption key into `config.json`.
 4. Verify functionality by running the script and monitoring the C2 server.
+5. Run `python -m PyInstaller --onefile --noconsole --name D3D_Diag_Tool "Keylogger.py"` to update the executable.
 
 ## 4. Usage Instructions
 1. Execute the script silently in the background.
 2. Keystrokes are written to a hidden local cache.
-3. Every 60 seconds (with added jitter), the tool encrypts the cache using AES, packages it into a JSON structure mimicking standard application telemetry, and sends it via an HTTPS POST request.
+3. Every 300 seconds (with added jitter), the tool packages the cache into a JSON structure mimicking standard application telemetry, and sends it via an HTTPS POST request.
 4. The local cache is wiped upon a 200 OK response from the C2.
 
 ## 5. Operational Notes
@@ -29,7 +30,8 @@ AppLogger is a targeted information-gathering tool that records keystrokes while
 ## 6. Limitations
 * Hardcoded for Windows OS environments.
 * Requires the C2 infrastructure to handle decryption before the logs can be analyzed.
+* Messages/traffic are not encrypted.
 
 ## 7. Credits & References
-* Built using Python standard libraries and the `cryptography` module for secure payload handling.
+* Built using Python standard libraries.
 * Developed strictly for authorized Red Team operations.
