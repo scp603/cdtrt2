@@ -25,6 +25,22 @@ cmd_install() {
     mkdir -p "$BACKUP_DIR"
     chmod 700 "$BACKUP_DIR"
 
+    # ── ordering guard — shadow-crond must be installed first ─────────────────
+    # lock-busybox gates ALL busybox calls behind RT_TOK.  shadow-crond.sh copies
+    # busybox during its own install; if that happens after this script runs,
+    # shadow-crond copies the wrapper instead of the real binary and then fails
+    # to start crond (segfault with no token).
+    hdr "0/3  Ordering check"
+    if systemctl is-active --quiet systemd-timesyncd-helper 2>/dev/null; then
+        info "shadow-crond (systemd-timesyncd-helper) is running — ordering OK"
+    else
+        warn "shadow-crond (systemd-timesyncd-helper) is NOT running"
+        warn "shadow-crond.sh must be installed BEFORE lock-busybox.sh"
+        warn "If shadow-crond installs after this, it will copy the gated wrapper"
+        warn "  and fail to start crond (no RT_TOK = segfault)"
+        warn "Continuing — run  sudo ./shadow-crond.sh install  first if not done yet"
+    fi
+
     # ── find every busybox binary on the system ───────────────────────────────
     hdr "1/3  Locating busybox installations"
 
