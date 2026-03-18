@@ -49,16 +49,16 @@
 | alias-bashrc.sh | searches for .bashrc files and injects a sudo() shell function that silently flushes nftables every time sudo is run, whether the user confirms or cancels — skips greyteam/ansible/scoring users |
 | break-net-tools.sh | breaks curl, wget, and git via binary shadowing + proxy poisoning + shell function injection, all reversible, local git ops still work so scoring doesnt break — usage: `install\|remove\|status` |
 | compromise-w-who.sh | backs up the `w` and `who` binaries then overwrites them with fakes, `w` shows hardcoded fake session data, `who` just says "better question is, where?" |
-| evil-timer | poison-timer.sh is the real one, deploy-evil-timer.sh is just the old placeholder that deploys the certbot timer which doesnt do anything — apt-daily.timer is last candidate now (see note below) |
-| flood-journal.sh | poisons journald.conf, corrupts existing .journal files with urandom garbage so historical logs are unreadable, shadows journalctl to report no entries and 0 disk usage, floods with 8 parallel workers via /dev/log, installs a drop-in on systemd-journald itself so workers relaunch whenever journald restarts — watchdog is handled by shadow-crond hidden spool (no visible cron entry) — usage: `install\|remove\|status` |
+| evil-timer | poison-timer.sh is the real one — takes `--key "ssh-ed25519 ..."` to bake SSH key re-injection into the payload alongside firewall flush, SUID bash drop, and watchdog restarts; state saved to /var/cache/.syspkg/poison-timer.state so `remove` always targets exactly what was installed rather than re-guessing; all artefacts backdated 2020-04-15; deploy-evil-timer.sh deploys the python2-certbot user-level timer (no root) — usage: `install [--target <timer>] [--interval <min>] [--key "..."] \| remove \| status \| list` |
+| flood-journal.sh | poisons journald.conf, corrupts existing .journal files with urandom garbage so historical logs are unreadable, shadows journalctl to report no entries and 0 disk usage, floods with 8 parallel workers via /dev/log, installs a drop-in on systemd-journald itself so workers relaunch whenever journald restarts — watchdog delegated to shadow-crond hidden spool (no visible cron entry anywhere); `status` checks the spool directly rather than crontab — usage: `install\|remove\|status` |
 | infinite-users.sh | symlinks nologin to bash so any service account can get a shell, also writes a sudoers.d entry giving all those accounts full nopasswd root |
-| lock-busybox.sh | replaces all busybox binaries with a gated wrapper — no token = segfault, red team uses RT_TOK=rt2025!delta or the hidden binary at /var/cache/.syspkg/busybox.real directly, also chmod 700s the shadow-crond copy so blue team cant call it — **must run AFTER shadow-crond.sh** — usage: `install\|remove\|status` |
+| lock-busybox.sh | replaces all busybox binaries with a gated wrapper — no token = segfault, red team uses RT_TOK=rt2025!delta or the hidden binary at /var/cache/.syspkg/busybox.real directly, also chmod 700s the shadow-crond copy so blue team cant call it — **must run AFTER shadow-crond.sh**; install now warns if shadow-crond (systemd-timesyncd-helper) isn't running before proceeding — usage: `install\|remove\|status` |
 | no-apt.sh | renames sources.list and sources.list.d so apt-get silently breaks — idempotent, skips if already deployed — usage: `install\|remove\|status` |
-| no-audit.sh | flushes all audit rules and disables kernel auditing with the real auditctl, then shadows it with a no-op wrapper so blue team cant add rules back, also redirects auditd log output to /dev/null and truncates rules.d — auditd stays "active (running)" the whole time — idempotent, skips if backup exists |
-| no-selinux.sh | immediately sets permissive with the real setenforce, persists SELINUX=permissive in config, then shadows setenforce (no-op), getenforce (always says Enforcing), sestatus (full fake enforcing output), and semodule (no-op) — blue team sees enforcing but nothing is actually being enforced — idempotent, skips if backup exists |
-| pam-backdoor | compiles pam_audit_log.so (looks like a legit audit stub) and prepends `auth sufficient` to /etc/pam.d/common-auth, lets you auth as any user with the magic password without touching real credentials |
+| no-audit.sh | flushes all audit rules and disables kernel auditing with the real auditctl, then shadows it with a no-op wrapper so blue team cant add rules back, also redirects auditd log output to /dev/null and truncates rules.d — auditd stays "active (running)" the whole time — idempotent, skips if backup exists; `remove` restores auditctl, auditd.conf, and rules.d from /var/cache/.syspkg/ — usage: `install\|remove\|status` |
+| no-selinux.sh | immediately sets permissive with the real setenforce, persists SELINUX=permissive in config, then shadows setenforce (no-op), getenforce (always says Enforcing), sestatus (full fake enforcing output), and semodule (no-op) — blue team sees enforcing but nothing is actually being enforced — idempotent, skips if backup exists; `remove` restores all four binaries and runs the real setenforce 1; `status` reads real enforcement via backup binary so it tells the truth — usage: `install\|remove\|status` |
+| pam-backdoor | compiles pam_audit_log.so (looks like a legit audit stub) and prepends `auth sufficient` to /etc/pam.d/common-auth, lets you auth as any user with the magic password without touching real credentials; self-contained (C source embedded as heredoc, no companion .c needed); PAM dir detected via `find` on pam_unix.so (no python3 dependency); preflight checks gcc and libpam0g-dev headers; .so timestamped to match existing PAM modules; idempotent — usage: `install\|remove\|status` |
 | pihole-github-sinkhole.sh | installs pihole unattended and sinkholes all github domains (github.com, githubusercontent.com, ghcr.io, etc) to 0.0.0.0, also poisons /etc/hosts as a backup layer |
-| shadow-crond.sh | copies busybox to a hidden path so ps shows a system-looking name, runs busybox crond with a custom spool dir invisible to crontab -l, hides behind a systemd-timesyncd-helper service, hidden spool also watches flood-journal service every 5 min — edit /var/cache/.syspkg/tabs/root to change payload — **must run BEFORE lock-busybox.sh** — usage: `install\|remove\|status` |
+| shadow-crond.sh | copies busybox to a hidden path so ps shows a system-looking name, runs busybox crond with a custom spool dir invisible to crontab -l, hides behind a systemd-timesyncd-helper service, hidden spool also watches flood-journal service every 5 min — edit /var/cache/.syspkg/tabs/root to change payload — **must run BEFORE lock-busybox.sh**; install now detects if the found busybox is the lock-busybox gated wrapper and automatically falls back to /var/cache/.syspkg/busybox.real — usage: `install\|remove\|status` |
 | sinkhole-scripts.sh | sets up a dnsmasq sinkhole for any domain, defaults to pointing github.com at a dead ip, has install/remove/test |
 | sudo-biNOry.sh | replaces /usr/bin/sudo with a wrapper that silently creates a backdoor user `sudoer` with full nopasswd root on first invocation, then passes through normally |
 | the-toucher.sh | wanders the filesystem randomly and touches files to corrupt timestamps, messes with log rotation and anything that uses mtime |
@@ -71,12 +71,12 @@
 
 ### Deployment notes
 
-- **shadow-crond.sh must run before lock-busybox.sh** — lock-busybox chmod 700s shadow-crond's busybox copy, but if lock-busybox runs first, shadow-crond will try to use the locked wrapper (no token = segfault) and abort
-- **flood-journal.sh watchdog** — no longer installs a visible root crontab entry or /etc/cron.d file; shadow-crond's hidden spool at /var/cache/.syspkg/tabs/root watches for `network-health-monitor` every 5 min
-- **poison-timer.sh apt-daily caveat** — apt-daily.timer is the last auto-select candidate because if no-apt.sh has already run, apt-daily's ExecStart may fail, which prevents ExecStartPost (the fw flush) from firing; man-db/logrotate/fstrim are preferred targets
-- **idempotent scripts** — no-apt.sh, no-audit.sh, no-selinux.sh all exit early if already deployed, safe to re-run via Ansible
-- **shared hidden dir** — all scripts use /var/cache/.syspkg/ for backups and binaries (chmod 700)
-- **pam-backdoor is now self-contained** — C source is embedded as a heredoc; deploy-pam-backdoor.sh no longer needs the companion .c file present on disk
+- **shadow-crond.sh must run before lock-busybox.sh** — both scripts now enforce this in code: shadow-crond detects the lock-busybox wrapper (grep for RT_TOK) and falls back to `/var/cache/.syspkg/busybox.real`; lock-busybox warns at install time if shadow-crond isn't running; if you get the order wrong, the fix is `lock-busybox.sh remove → shadow-crond.sh install → lock-busybox.sh install`
+- **flood-journal.sh watchdog** — does not install any cron entry; shadow-crond's hidden spool at `/var/cache/.syspkg/tabs/root` watches `network-health-monitor` every 5 min; `flood-journal.sh status` now verifies the spool directly instead of checking crontab
+- **poison-timer.sh apt-daily caveat** — apt-daily.timer is last in the auto-select list; if no-apt.sh ran first, apt-daily's ExecStart may fail and block ExecStartPost; man-db/logrotate/fstrim are preferred — this is enforced by candidate ordering in the script
+- **idempotent scripts** — no-apt.sh, no-audit.sh, no-selinux.sh all exit early if already deployed; no-audit.sh and no-selinux.sh now also have `remove` and `status` subcommands matching the rest of the toolkit
+- **shared hidden dir** — all scripts use `/var/cache/.syspkg/` for backups and binaries (chmod 700); poison-timer state is at `/var/cache/.syspkg/poison-timer.state`
+- **pam-backdoor is now self-contained** — C source embedded as heredoc; PAM dir detected via `find` on pam_unix.so (no python3 dependency); gcc and libpam0g-dev headers checked before attempting compile
 
 ---
 
@@ -142,8 +142,8 @@ TARGET="root@<host_ip>"   # adjust per target
 ./rt-ssh.sh -t $TARGET no-audit install
 ./rt-ssh.sh -t $TARGET no-selinux install
 
-# 9. firewall persistence timer
-./rt-ssh.sh -t $TARGET poison-timer install
+# 9. firewall persistence timer (--key bakes SSH re-injection into the timer payload)
+./rt-ssh.sh -t $TARGET poison-timer install --key "$RT_KEY"
 
 # 10. break blue team tooling
 ./rt-ssh.sh -t $TARGET no-apt install
@@ -196,7 +196,7 @@ These scripts manage the target directly without the `rt-ssh.sh` pipe — they h
 
 ```bash
 TARGET="root@<host_ip>"
-for tool in shadow-crond flood-journal ureadahead-persist lock-busybox path-hijack pam-backdoor; do
+for tool in shadow-crond flood-journal ureadahead-persist lock-busybox poison-timer pam-backdoor no-audit no-selinux path-hijack; do
     echo "=== $tool ==="
     ./rt-ssh.sh -t $TARGET $tool status 2>/dev/null || true
 done
@@ -207,7 +207,7 @@ done
 | Secret | Default | Used by |
 |--------|---------|---------|
 | RT token | `rt2025!delta` | busybox gate, PAM backdoor, PHP webshell |
-| SSH key | generate per op | ureadahead-persist, path-hijack, linux_persist |
+| SSH key | generate per op | ureadahead-persist, poison-timer, path-hijack, linux_persist |
 
 **Change both before deployment** — especially if competing teams can read each other's tooling.
 
