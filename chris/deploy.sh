@@ -21,16 +21,20 @@ set -uo pipefail
 # ── CONFIG — fill these in on comp day ───────────────────────────────────────
 
 TARGETS=(
-    "192.168.75.129"
-    # "192.168.x.x"
-    # "192.168.x.x"
-    # "192.168.x.x"
-    # "192.168.x.x"
+    "10.10.10.101"
+    "10.10.10.102"
+    "10.10.10.103"
+    "10.10.10.104"
+    "10.10.10.105"
+    "10.10.10.106"
+    "10.10.10.107"
+    "10.10.10.108"
+    "10.10.10.109"
 )
 
 USER="target"
 PASSWORD="targetvm"
-LHOST="192.168.75.130"
+LHOST="10.10.10.160"
 LPORT="4444"
 SSH_PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINdfRaX3m4g2IxRAU13/phGVXk4cZqcB0Y1FHCCaz4hW chris@kali"
 
