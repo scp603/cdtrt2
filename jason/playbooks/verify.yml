@@ -1,0 +1,108 @@
+# Made by
+# Jason Hyde
+# jth1987@rit.edu
+---
+- name: Verify All Persistence Mechanisms
+  hosts: targets
+  become: yes
+  gather_facts: no
+
+  tasks:
+
+    - name: Check cron script exists
+      stat:
+        path: /etc/cron_helper.sh
+      register: cron_script
+
+    - name: Check /etc/cron.d entry exists
+      stat:
+        path: /etc/cron.d/{{ cron_job_name }}
+      register: cron_d
+
+    - name: Report cron status
+      debug:
+        msg:
+          - "Cron script:       {{ 'FOUND' if cron_script.stat.exists else 'MISSING' }}"
+          - "Cron.d entry:      {{ 'FOUND' if cron_d.stat.exists else 'MISSING' }}"
+
+    - name: Check systemd timer exists
+      stat:
+        path: /etc/systemd/system/sys-network-check.timer
+      register: systemd_timer
+
+    - name: Check systemd timer is active
+      shell: systemctl is-active sys-network-check.timer
+      register: timer_active
+      ignore_errors: yes
+
+    - name: Report systemd timer status
+      debug:
+        msg:
+          - "Timer unit file:   {{ 'FOUND' if systemd_timer.stat.exists else 'MISSING' }}"
+          - "Timer active:      {{ timer_active.stdout }}"
+
+    - name: Check systemd service exists
+      stat:
+        path: /etc/systemd/system/sys-net-daemon.service
+      register: systemd_service
+
+    - name: Check systemd service is active
+      shell: systemctl is-active sys-net-daemon.service
+      register: service_active
+      ignore_errors: yes
+
+    - name: Report systemd service status
+      debug:
+        msg:
+          - "Service unit file: {{ 'FOUND' if systemd_service.stat.exists else 'MISSING' }}"
+          - "Service active:    {{ service_active.stdout }}"
+
+    - name: Check /etc/bash.bashrc injection
+      shell: grep -c "{{ callback_ip }}" /etc/bash.bashrc
+      register: bashrc_check
+      ignore_errors: yes
+
+    - name: Check /etc/profile injection
+      shell: grep -c "{{ callback_ip }}" /etc/profile
+      register: profile_check
+      ignore_errors: yes
+
+    - name: Check profile.d script exists
+      stat:
+        path: /etc/profile.d/sys-diag.sh
+      register: profiled_check
+
+    - name: Report shell profile status
+      debug:
+        msg:
+          - "bash.bashrc:       {{ 'FOUND' if bashrc_check.rc == 0 else 'MISSING' }}"
+          - "/etc/profile:      {{ 'FOUND' if profile_check.rc == 0 else 'MISSING' }}"
+          - "profile.d script:  {{ 'FOUND' if profiled_check.stat.exists else 'MISSING' }}"
+
+    - name: Check sshd_config AuthorizedKeysFile line
+      shell: grep -c ".cache" /etc/ssh/sshd_config
+      register: sshd_check
+      ignore_errors: yes
+
+    - name: Check hidden authorized_keys file exists
+      stat:
+        path: /home/backup/.ssh/.cache
+      register: hidden_key
+
+    - name: Check sudoers backdoor exists
+      stat:
+        path: /etc/sudoers.d/99-sys-defaults
+      register: sudoers_check
+
+    - name: Check backup user has bash shell
+      shell: getent passwd backup | cut -d':' -f7
+      register: backup_shell
+      ignore_errors: yes
+
+    - name: Report SSH misconfig status
+      debug:
+        msg:
+          - "sshd_config patched:  {{ 'FOUND' if sshd_check.rc == 0 else 'MISSING' }}"
+          - "Hidden key file:      {{ 'FOUND' if hidden_key.stat.exists else 'MISSING' }}"
+          - "Sudoers backdoor:     {{ 'FOUND' if sudoers_check.stat.exists else 'MISSING' }}"
+          - "Backup shell:         {{ backup_shell.stdout }}"

