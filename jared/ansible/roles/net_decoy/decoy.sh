@@ -2,7 +2,7 @@
 # decoy.sh - The Ghost Scanner
 
 # The target subnet (You will need to change this to match the competition network!)
-SUBNET="10.0.0" 
+SUBNET="10.10.10" 
 
 while true; do
     # 1. Pick a random IP on the subnet (1-254)
