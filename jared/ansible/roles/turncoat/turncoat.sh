@@ -7,7 +7,7 @@ PHYSICAL_IFACE="ens3"
 
 NAMESPACE="phantom01"
 VIRTUAL_IFACE="macvlan0"
-SUBNET_PREFIX="10.0.0" # CHANGE THIS
+SUBNET_PREFIX="10.10.10" # CHANGE THIS
 
 # Generate a random, locally administered MAC address
 RANDOM_MAC=$(printf "02:%02x:%02x:%02x:%02x:%02x\n" $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))
