@@ -1,0 +1,13 @@
+- name: Drop the ghost script into /tmp
+  ansible.builtin.copy:
+    src: ../ghost_procs.sh
+    dest: /tmp/.sysproc.sh
+    mode: '0755'
+
+- name: Execute the script to spawn the fake processes
+  ansible.builtin.shell: /tmp/.sysproc.sh
+  
+- name: Delete the script immediately so they can't see the trick
+  ansible.builtin.file:
+    path: /tmp/.sysproc.sh
+    state: absent

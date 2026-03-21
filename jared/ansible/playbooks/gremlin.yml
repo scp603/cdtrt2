@@ -1,0 +1,7 @@
+---
+- name: Deploy the keyboard gremlin annoyance tool
+  hosts: ubuntu_servers
+  gather_facts: yes
+  become: yes
+  roles:
+    - gremlin

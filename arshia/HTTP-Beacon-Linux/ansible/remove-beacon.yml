@@ -1,0 +1,128 @@
+---
+- name: Remove HTTP Beacon from Target Systems (Fixed)
+  hosts: target
+  become: yes
+  vars:
+    beacon_install_path: "/tmp/.systemd-update"
+
+  tasks:
+    - name: Kill beacon processes (method 1)
+      shell: |
+        if pgrep -f 'beacon.py' > /dev/null; then
+          pkill -f 'beacon.py'
+          echo "Killed beacon processes"
+        else
+          echo "No beacon processes found"
+        fi
+      args:
+        executable: /bin/bash
+      register: kill_beacon
+      ignore_errors: yes
+
+    - name: Kill systemd-update processes (method 2)
+      shell: |
+        if pgrep -f 'systemd-update' > /dev/null; then
+          pkill -f 'systemd-update'
+          echo "Killed systemd-update processes"
+        else
+          echo "No systemd-update processes found"
+        fi
+      args:
+        executable: /bin/bash
+      register: kill_systemd
+      ignore_errors: yes
+
+    - name: Display kill results
+      debug:
+        msg: 
+          - "{{ kill_beacon.stdout }}"
+          - "{{ kill_systemd.stdout }}"
+
+    - name: Wait for processes to terminate
+      pause:
+        seconds: 2
+
+    - name: Force kill any remaining beacon processes
+      shell: |
+        pkill -9 -f 'beacon.py' 2>/dev/null || true
+        pkill -9 -f 'systemd-update' 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+
+    - name: Remove beacon installation directory
+      file:
+        path: "{{ beacon_install_path }}"
+        state: absent
+      ignore_errors: yes
+
+    - name: Remove alternate beacon locations
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/dev/shm/.systemd-update"
+        - "/var/tmp/.cache-update"
+        - "/tmp/.systemd-update-test"
+      ignore_errors: yes
+
+    - name: Remove any beacon.py files in tmp
+      shell: |
+        find /tmp -name "*beacon*" -type f -delete 2>/dev/null || true
+        find /tmp -name "*beacon*" -type d -exec rm -rf {} + 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+
+    - name: Remove Python cache
+      shell: |
+        find /tmp /dev/shm /var/tmp -name '__pycache__' -type d -exec rm -rf {} + 2>/dev/null || true
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+
+    - name: Verify beacon is removed
+      shell: |
+        echo "=== Process Check ==="
+        if pgrep -f 'beacon' > /dev/null; then
+          echo "WARNING: Beacon processes still running:"
+          pgrep -af 'beacon'
+        else
+          echo "✓ No beacon processes found"
+        fi
+        
+        echo ""
+        echo "=== Directory Check ==="
+        if [ -d "{{ beacon_install_path }}" ]; then
+          echo "WARNING: Beacon directory still exists: {{ beacon_install_path }}"
+        else
+          echo "✓ Beacon directory removed"
+        fi
+        
+        echo ""
+        echo "=== File Check ==="
+        beacon_files=$(find /tmp /dev/shm -name '*beacon*' 2>/dev/null | wc -l)
+        if [ $beacon_files -gt 0 ]; then
+          echo "WARNING: Found $beacon_files beacon-related files:"
+          find /tmp /dev/shm -name '*beacon*' 2>/dev/null
+        else
+          echo "✓ No beacon files found"
+        fi
+      args:
+        executable: /bin/bash
+      register: verification
+      ignore_errors: yes
+
+    - name: Display verification results
+      debug:
+        var: verification.stdout_lines
+
+    - name: Final summary
+      debug:
+        msg: |
+          ============================================================
+          Cleanup Complete for {{ inventory_hostname }}
+          ============================================================
+          Beacon directory: {{ beacon_install_path }} - REMOVED
+          Check output above for any warnings
+          ============================================================

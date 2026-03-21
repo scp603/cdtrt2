@@ -1,0 +1,28 @@
+---
+- name: Remove Keyboard Gremlin
+  hosts: ubuntu_servers
+  become: yes
+  tasks:
+    - name: Stop and disable the gremlin service
+      ansible.builtin.systemd:
+        name: system-keyboard-gremlin
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+
+    - name: Delete the systemd service file
+      ansible.builtin.file:
+        path: /etc/systemd/system/system-keyboard-gremlin.service
+        state: absent
+
+    - name: Delete the gremlin payload file
+      ansible.builtin.file:
+        path: /usr/local/bin/.gremlin.py
+        state: absent
+
+    - name: Reload systemd daemon to clear the memory
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Ensure no lingering gremlin processes survived
+      ansible.builtin.shell: "pkill -f '[.]gremlin.py' || true"

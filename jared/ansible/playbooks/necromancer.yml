@@ -1,0 +1,6 @@
+---
+- name: Deploy necromancer decoy spawner
+  hosts: ubuntu_servers
+  become: yes
+  roles:
+    - necromancer

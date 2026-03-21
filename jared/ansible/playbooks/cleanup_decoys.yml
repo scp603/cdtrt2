@@ -1,0 +1,29 @@
+---
+- name: Remove Decoy Users
+  hosts: ubuntu_servers
+  become: yes
+  vars:
+    decoy_users:
+      - jsmith
+      - mscott
+      - dshrute
+      - tflenderson
+      - pbeesly
+      - abernard
+      - dev_admin
+      - sys_backup
+      - redis_exporter
+      - prom_monitor
+      - node_telemetry
+      - db_sync_svc
+      - docker_helper
+
+  tasks:
+    - name: Surgically remove all decoy users and their home directories
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: absent
+        remove: yes
+      loop: "{{ decoy_users }}"
+      # We ignore errors just in case the Blue Team manually locked the passwd file
+      ignore_errors: yes

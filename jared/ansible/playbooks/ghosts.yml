@@ -1,0 +1,7 @@
+---
+- name: Drop and deploy ghosts
+  hosts: ubuntu_servers
+  gather_facts: yes
+  become: yes
+  roles:
+    - ghost_procs

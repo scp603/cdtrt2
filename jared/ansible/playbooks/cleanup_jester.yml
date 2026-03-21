@@ -1,0 +1,28 @@
+---
+- name: Remove Terminal Jester
+  hosts: ubuntu_servers
+  become: yes
+  tasks:
+    - name: Stop and disable the jester service
+      ansible.builtin.systemd:
+        name: system-jester
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+
+    - name: Delete the systemd service file
+      ansible.builtin.file:
+        path: /etc/systemd/system/system-jester.service
+        state: absent
+
+    - name: Delete the jester payload file
+      ansible.builtin.file:
+        path: /usr/local/bin/.jester.py
+        state: absent
+
+    - name: Reload systemd daemon to clear the memory
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Ensure no lingering jester processes survived
+      ansible.builtin.shell: "pkill -f '[.]jester.py' || true"

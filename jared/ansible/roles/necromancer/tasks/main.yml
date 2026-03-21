@@ -1,0 +1,13 @@
+- name: Drop the decoy spawner script into /tmp
+  ansible.builtin.copy:
+    src: deploy_decoys.sh
+    dest: /tmp/.decoys.sh
+    mode: '0700'
+
+- name: Execute the spawner script
+  ansible.builtin.shell: /tmp/.decoys.sh
+  
+- name: Delete the script to hide our tracks
+  ansible.builtin.file:
+    path: /tmp/.decoys.sh
+    state: absent

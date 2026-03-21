@@ -1,0 +1,36 @@
+---
+- name: 1. Ensure python3 is installed
+  ansible.builtin.apt:
+    name: python3
+    state: present
+    update_cache: yes
+
+- name: 2. Drop the jester script into /usr/local/bin
+  ansible.builtin.copy:
+    src: ../jester.py
+    dest: /usr/local/bin/.jester.py
+    mode: '0755'
+
+- name: 3. Create the fake systemd service file
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/system-jester.service
+    content: |
+      [Unit]
+      Description=Terminal Jester Noise Generator
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/python3 /usr/local/bin/.jester.py
+      Restart=always
+      RestartSec=20
+      User=root
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: 4. Reload systemd and start the jester service
+  ansible.builtin.systemd:
+    daemon_reload: yes
+    name: system-jester
+    enabled: yes
+    state: restarted

@@ -1,0 +1,7 @@
+{
+    "c2_url": "http://127.0.0.1:8080",
+    "check_in_interval": 30,
+    "jitter_percent": 30,
+    "timeout": 10,
+    "beacon_id": "auto"
+}
