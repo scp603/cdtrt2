@@ -20,6 +20,7 @@ C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(614,3): 
       consider using '%zd' in the format string
   
 C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(797,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
-C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(826,9): warning C4189: 'shellSize': local variable is initialized but not referenced
-C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1052,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(827,9): warning C4189: 'shellSize': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(864,9): warning C4189: 'shellSize': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1048,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
   Client.vcxproj -> C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\x64\Debug\Client.exe

