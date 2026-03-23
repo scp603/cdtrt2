@@ -1,0 +1,18 @@
+enum4linux -h
+
+Install 
+sudo apt update
+sudo apt install enum4linux
+
+Quick start:
+enum4linux -a <target_ip>   # runs everything (users, shares, groups, policy)
+
+enum4linux -U <ip>   # users
+enum4linux -S <ip>   # shares
+enum4linux -G <ip>   # groups
+enum4linux -P <ip>   # password policy
+enum4linux -i <ip>   # info (OS/domain)
+
+Competiton: 
+enum4linux -a 10.10.10.22 | tee smb_enum.txt
+enum4linux -a 10.10.10.105 | tee samba_enum.txt

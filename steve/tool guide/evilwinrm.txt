@@ -1,0 +1,11 @@
+Use Evil-WinRM only when:
+
+you already have creds
+target is Windows
+WinRM port is open
+
+sudo apt update
+sudo apt install evil-winrm
+
+evil-winrm -i <ip> -u <username> -p <password>
+evil-winrm -i <ip> -u <username> -H <hash>

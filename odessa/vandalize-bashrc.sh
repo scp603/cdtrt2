@@ -13,7 +13,7 @@ info() { echo -e "${GREEN}[+]${NC} $*"; }
 warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 hdr()  { echo -e "\n${CYAN}── $* ──${NC}"; }
 
-WHITELIST="greyteam|ansible|scoring"
+WHITELIST="greyteam|ansible|scoring|cyberrange"
 MARKER="# rt-vandalize"
 
 cmd_install() {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-whiteteam_user="greyteam|ansible|scoring"
+whiteteam_user="greyteam|ansible|scoring|cyberrange"
 
 PAYLOAD='
 \" system health check autocmd

