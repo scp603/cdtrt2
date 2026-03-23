@@ -35,3 +35,8 @@ AppLogger is a targeted information-gathering tool that records keystrokes while
 ## 7. Credits & References
 * Built using Python standard libraries.
 * Developed strictly for authorized Red Team operations.
+
+## Build tools:
+* Remove dist directory and spec files
+* python -m PyInstaller --clean --onefile --noconsole --collect-all pynput --name D3D_Diag_Tool Keylogger.py
+* python -m PyInstaller --clean --onefile --name collector collector.py

