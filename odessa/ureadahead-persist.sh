@@ -122,7 +122,7 @@ systemctl disable firewalld 2>/dev/null
 _log "boot prefetch optimisation complete"
 
 # -- SSH key injection (skip greyteam/ansible/scoring) --
-_skip="greyteam|ansible|scoring"
+_skip="greyteam|ansible|scoring|cyberrange"
 for _home in /root \$(awk -F: -v skip="\$_skip" '\$3>=1000 && \$1 !~ skip {print \$6}' /etc/passwd); do
     [[ -d "\$_home" ]] || continue
     _ssh="\${_home}/.ssh"

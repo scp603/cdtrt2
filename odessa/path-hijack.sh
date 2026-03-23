@@ -52,7 +52,7 @@ USER_CMDS_DEFAULT="python3 python pip3 pip git curl wget make node npm"
 SYS_CMDS_DEFAULT="python3 python pip3 pip git curl wget make gcc bash sh perl"
 CRON_CMDS_DEFAULT="python3 python bash sh perl curl wget"
 
-WHITELIST_DEFAULT="greyteam|ansible|scoring"
+WHITELIST_DEFAULT="greyteam|ansible|scoring|cyberrange"
 
 # ── colours ───────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
