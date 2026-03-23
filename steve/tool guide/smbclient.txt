@@ -1,0 +1,77 @@
+SMBCLIENT QUICK START
+
+[0] INSTALL
+sudo apt update
+sudo apt install smbclient
+
+Verify:
+smbclient --version
+
+
+[1] LIST SHARES
+Try anonymous first:
+smbclient -L //<ip> -N
+
+If needed:
+smbclient -L //<ip> -U username
+
+
+[2] CONNECT TO A SHARE
+Anonymous:
+smbclient //<ip>/<share> -N
+
+With credentials:
+smbclient //<ip>/<share> -U username
+
+Example:
+smbclient //10.10.10.22/public -N
+
+
+[3] INSIDE THE SHARE
+You will see:
+smb: \>
+
+Commands:
+ls          -> list files
+cd folder   -> change directory
+pwd         -> show current directory
+exit        -> leave
+
+
+[4] DOWNLOAD FILES
+Single file:
+get filename
+
+Download everything:
+prompt OFF
+recurse ON
+mget *
+
+
+[5] WHAT TO LOOK FOR
+- config files
+- backup files
+- .txt files
+- credentials
+- flags
+
+
+[6] FAST WORKFLOW
+smbclient -L //<ip> -N
+→ connect to share
+→ ls
+→ mget *
+→ read files
+
+
+[7] TIPS
+- Always try anonymous (-N) first
+- Then try credentials
+- Look for shares like:
+  public
+  backup
+  users
+
+
+ONE-LINE:
+smbclient = connect → download → find creds/flags
