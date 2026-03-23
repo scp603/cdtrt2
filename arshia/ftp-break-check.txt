@@ -1,0 +1,8 @@
+# Check if files uploaded
+curl http://<ip>/uploads/config.php
+
+# Check if FTP is down
+ftp <ip>
+
+# Check if backdoor is listening
+nc <ip> 4444
