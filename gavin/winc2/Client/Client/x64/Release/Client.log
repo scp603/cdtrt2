@@ -1,0 +1,19 @@
+﻿  main.cpp
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(55,9): warning C4005: 'PRINTF': macro redefinition
+      C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\config.hpp(27,9):
+      see previous definition of 'PRINTF'
+  
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(774,31): warning C4101: 'e': unreferenced local variable
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(797,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(827,9): warning C4189: 'shellSize': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(864,9): warning C4189: 'shellSize': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1048,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1175,5): warning C4100: 'nShowCmd': unreferenced parameter
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1175,5): warning C4100: 'lpCmdLine': unreferenced parameter
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1175,5): warning C4100: 'hPrevInstance': unreferenced parameter
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1175,5): warning C4100: 'hInstance': unreferenced parameter
+  Generating code
+  Previous IPDB not found, fall back to full compilation.
+  All 2028 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  Client.vcxproj -> C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\x64\Release\Client.exe

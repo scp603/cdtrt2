@@ -1,0 +1,13 @@
+# Stop current C2
+# Press Ctrl+C in C2 terminal
+
+# Edit c2_server.py to change port priority
+nano c2_server.py
+
+# Change this line:
+PORTS = [8080, 8000, 8443, 9090, 443, 80]
+# To this (put your preferred port first):
+PORTS = [443, 8080, 8000, 8443, 9090, 80]
+
+# Restart C2
+python3 c2_server.py

