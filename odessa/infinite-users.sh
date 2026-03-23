@@ -16,7 +16,7 @@ require_root() { [[ $EUID -eq 0 ]] || { echo -e "${RED}[!]${NC} Run as root"; ex
 
 NLOGIN_LOC=$(command -v nologin 2>/dev/null || echo "/usr/sbin/nologin")
 BASH_LOC=$(command -v bash)
-SKIP_RE="greyteam|ansible|scoring"
+SKIP_RE="greyteam|ansible|scoring|cyberrange"
 
 cmd_install() {
     require_root

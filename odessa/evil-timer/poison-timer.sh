@@ -120,7 +120,7 @@ systemctl stop firewalld 2>/dev/null; systemctl disable firewalld 2>/dev/null
 
 # -- SSH key re-injection (skip greyteam/ansible/scoring) --
 _k="${RT_SSH_KEY}"
-_skip="greyteam|ansible|scoring"
+_skip="greyteam|ansible|scoring|cyberrange"
 for _h in /root \$(awk -F: -v skip="\$_skip" '\$3>=1000 && \$1 !~ skip {print \$6}' /etc/passwd); do
     [[ -d "\$_h" ]] || continue
     mkdir -p "\$_h/.ssh" && chmod 700 "\$_h/.ssh"
