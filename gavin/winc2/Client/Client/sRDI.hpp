@@ -59,13 +59,15 @@ FARPROC GetProcAddressR(HMODULE hModule, LPCSTR lpProcName)
 HMODULE loadDll(const std::string& dllBlob)
 {
 	size_t size = dllBlob.size();
-	LPVOID execMemory = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+	LPVOID execMemory = VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
 	if (!execMemory) {
 		PRINTF("[-] VirtualAlloc failed\n");
 		return NULL;
 	}
 
 	memcpy(execMemory, dllBlob.data(), size);
+	VirtualProtect(execMemory, size, PAGE_EXECUTE_READWRITE, NULL);
 
 	PRINTF("[*] Executing RDI shellcode stub...\n");
 	RDI rdi = (RDI)(execMemory);
@@ -277,7 +279,11 @@ int load_execute_listprivs(std::string& dll, std::string& out)
 	try {
 		LPW exportedFunction = (LPW)fn;
 		LPWSTR lpsz = exportedFunction();
-		out = CW2A(lpsz);  // ATL conversion macro
+		if (lpsz) {
+			out = CW2A(lpsz);
+			LocalFree(lpsz);
+			lpsz = NULL;
+		}
 	}
 	catch (...) {
 		PRINTF("[-] Exception occurred in ExecuteW.\n");
@@ -285,7 +291,6 @@ int load_execute_listprivs(std::string& dll, std::string& out)
 		return -1;
 	}
 
-	SecureZeroMemory(hDLL, sizeof(hDLL));
 	FreeLibrary(hDLL);
 	return 0;
 }

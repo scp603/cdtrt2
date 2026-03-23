@@ -32,7 +32,7 @@
 // ====== Global Constants ======
 // ==============================
 
-#define SERVER "127.0.0.1"   // Change if needed
+#define SERVER "100.65.7.205"   // Change if needed
 #define PORT 5000
 
 // ==============================

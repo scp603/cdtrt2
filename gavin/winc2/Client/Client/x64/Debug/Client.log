@@ -1,0 +1,25 @@
+﻿  main.cpp
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(39,9): warning C4005: 'VERBOSE': macro redefinition
+      C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\config.hpp(20,9):
+      see previous definition of 'VERBOSE'
+  
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(50,9): warning C4005: 'PRINTF': macro redefinition
+      C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\config.hpp(27,9):
+      see previous definition of 'PRINTF'
+  
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(614,3): warning C4477: 'printf' : format string '%d' requires an argument of type 'int', but variadic argument 1 has type 'size_t'
+      C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(614,3):
+      consider using '%zd' in the format string
+  
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(614,3): warning C4477: 'printf' : format string '%d' requires an argument of type 'int', but variadic argument 2 has type 'size_t'
+      C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(614,3):
+      consider using '%zd' in the format string
+  
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(614,3): warning C4477: 'printf' : format string '%d' requires an argument of type 'int', but variadic argument 3 has type 'size_t'
+      C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(614,3):
+      consider using '%zd' in the format string
+  
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(797,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(826,9): warning C4189: 'shellSize': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1052,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
+  Client.vcxproj -> C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\x64\Debug\Client.exe

