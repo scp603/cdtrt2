@@ -96,6 +96,7 @@ EOF
     fi
 
     # 4. Write the sinkhole drop-in
+    mkdir -p "$DNSMASQ_CONF_DIR"
     cat > "${SINKHOLE_CONF}" <<EOF
 # ----------------------------------------------------
 # DNS Sinkhole: ${TARGET_DOMAIN}
@@ -118,6 +119,28 @@ EOF
     chmod 640 "${LOG_FILE}"
 
     # 6. Restart / enable dnsmasq
+    # If no unit in the system paths (apt would use /lib/systemd/system/),
+    # write our own to /etc/systemd/system/. Always overwrite so a stale unit
+    # from a previous broken install doesn't linger.
+    if ! systemctl cat dnsmasq.service &>/dev/null \
+       || [[ -f /etc/systemd/system/dnsmasq.service ]]; then
+        warn "Writing/updating dnsmasq.service unit"
+        cat > /etc/systemd/system/dnsmasq.service <<'UNIT'
+[Unit]
+Description=dnsmasq - A lightweight DHCP and caching DNS server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/dnsmasq -k --conf-file=/etc/dnsmasq.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+        systemctl daemon-reload
+    fi
     systemctl enable dnsmasq --quiet
     systemctl restart dnsmasq
     info "dnsmasq restarted"
@@ -142,6 +165,15 @@ cmd_remove() {
         info "Removed ${SINKHOLE_CONF}"
     else
         warn "No sinkhole config found at ${SINKHOLE_CONF}"
+    fi
+
+    # Stop dnsmasq and remove our custom unit if we created it
+    systemctl stop dnsmasq 2>/dev/null || true
+    if [[ -f /etc/systemd/system/dnsmasq.service ]]; then
+        systemctl disable dnsmasq --quiet 2>/dev/null || true
+        rm -f /etc/systemd/system/dnsmasq.service
+        systemctl daemon-reload
+        info "Removed custom dnsmasq.service unit"
     fi
 
     # Restore stub listener if we disabled it

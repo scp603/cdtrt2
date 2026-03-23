@@ -24,22 +24,23 @@
 #
 # ── REMOTE tools (piped to target, never written to disk) ──────────────────────
 #   shadow-crond          install|remove|status
-#   flood-journal         install|remove|status
+#   nuke-journal          install|remove|status|wipe
 #   ureadahead-persist    install|remove|status [--key "ssh-ed25519 ..."]
 #   lock-busybox          install|remove|status
 #   poison-timer          install|remove|status
 #   evil-timer            install|remove|status   (user-level, no sudo needed)
 #   no-apt                install|remove|status
-#   no-audit              (one-shot, no subcommand)
+#   no-audit              install|remove|status
+#   no-selinux            install|remove|status
 #   break-net-tools       install|remove|status
 #   pam-backdoor          install|remove|status
 #   sinkhole              install|remove|status
 #   pihole-sinkhole       install|remove|status
 #   compromise-who        install|remove
-#   infinite-users        (one-shot)
-#   sudo-binary           (one-shot)
-#   vandalize-bashrc      (one-shot)
-#   the-toucher           (one-shot, starts background loop)
+#   infinite-users        install|remove|status
+#   sudo-binary           install|remove|status
+#   vandalize-bashrc      install|remove|status
+#   the-toucher           install|remove|status
 #   alias-bashrc          install|remove
 #   vim-persist           install|remove
 #   path-hijack           scan|install [--level system|cron] [--key "..."] [--commands "..."] [--payload 1|2|3]
@@ -73,12 +74,13 @@ hdr()   { echo -e "\n${CYAN}── $* ──${NC}"; }
 declare -A TOOLS=(
     # remote — need root on target
     [shadow-crond]="REMOTE:shadow-crond.sh"
-    [flood-journal]="REMOTE:flood-journal.sh"
+    [nuke-journal]="REMOTE:nuke-journal.sh"
     [ureadahead-persist]="REMOTE:ureadahead-persist.sh"
     [lock-busybox]="REMOTE:lock-busybox.sh"
     [poison-timer]="REMOTE:evil-timer/poison-timer.sh"
     [no-apt]="REMOTE:no-apt.sh"
     [no-audit]="REMOTE:no-audit.sh"
+    [no-selinux]="REMOTE:no-selinux.sh"
     [break-net-tools]="REMOTE:break-net-tools.sh"
     [pam-backdoor]="REMOTE:pam-backdoor/deploy-pam-backdoor.sh"
     [sinkhole]="REMOTE:sinkhole-scripts.sh"

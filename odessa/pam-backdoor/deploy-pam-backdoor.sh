@@ -122,8 +122,9 @@ CSRC
     # ── 4. inject into PAM config ─────────────────────────────────────────────
     hdr "4/4  Injecting into $PAM_CONF"
     [[ ! -f "${PAM_CONF}.orig" ]] && cp "$PAM_CONF" "${PAM_CONF}.orig"
-    # prepend before the first auth line so it runs first
-    sed -i "/^auth/i ${INJECT_LINE}" "$PAM_CONF"
+    # prepend before the FIRST auth line only
+    # (inserting before every auth line breaks success=N jump counts in Ubuntu's common-auth)
+    sed -i "0,/^auth/s/^auth/${INJECT_LINE}\nauth/" "$PAM_CONF"
     info "Injected: $INJECT_LINE"
     info "Backup  : ${PAM_CONF}.orig"
 
