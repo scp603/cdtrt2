@@ -1,0 +1,44 @@
+Hostname,Role/Service,OS,IP
+red-kali-01,Workstation,Kali,10.10.10.151
+red-kali-02,Workstation,Kali,10.10.10.152
+red-kali-03,Workstation,Kali,10.10.10.153
+red-kali-04,Workstation,Kali,10.10.10.154
+red-kali-05,Workstation,Kali,10.10.10.155
+red-kali-06,Workstation,Kali,10.10.10.156
+red-kali-07,Workstation,Kali,10.10.10.157
+red-kali-08,Workstation,Kali,10.10.10.158
+red-kali-09,Workstation,Kali,10.10.10.159
+red-kali-10,Workstation,Kali,10.10.10.160
+red-kali-11,Workstation,Kali,10.10.10.161
+red-kali-12,Workstation,Kali,10.10.10.162
+red-ubnt-01,Workstation,Ubuntu,10.10.10.171
+red-ubnt-02,Workstation,Ubuntu,10.10.10.172
+red-ubnt-03,Workstation,Ubuntu,10.10.10.173
+red-ubnt-04,Workstation,Ubuntu,10.10.10.174
+
+svc-ad-01,AD/DNS,Windows Server 2022,10.10.10.21
+svc-smb-01,SMB,Windows 11,10.10.10.22
+svc-ftp-01,VSFTPD,Ubuntu 24.04,10.10.10.101
+svc-redis-01,Redis/Flask/Nginx,Ubuntu 24.04,10.10.10.102
+svc-database-01,Redis/Nginx DB,Ubuntu 22.04,10.10.10.103
+svc-amazin-01,WordPress,Ubuntu 24.04,10.10.10.104
+svc-samba-01,Samba,Ubuntu 18.04,10.10.10.105
+
+blue-win-01,Workstation,Windows 11,10.10.10.23
+blue-win-02,Workstation,Windows 11,10.10.10.24
+blue-win-03,Workstation,Windows 11,10.10.10.25
+blue-win-04,Workstation,Windows 11,10.10.10.26
+blue-win-05,Workstation,Windows 11,10.10.10.27
+blue-win-06,Workstation,Windows 11,10.10.10.28
+blue-win-07,Workstation,Windows 11,10.10.10.29
+blue-win-08,Workstation,Windows 11,10.10.10.30
+blue-ubnt-01,Workstation,Ubuntu,10.10.10.106
+blue-ubnt-02,Workstation,Ubuntu,10.10.10.107
+blue-ubnt-03,Workstation,Ubuntu,10.10.10.108
+blue-ubnt-04,Workstation,Ubuntu,10.10.10.109
+
+grey-ansible,Deployment,Ubuntu,10.10.10.5
+grey-kali-01,Admin Kali,Kali,10.10.10.6
+grey-win-01,Admin Windows,Windows,10.10.10.7
+grey-waz-01,Wazuh,Ubuntu,10.10.10.10
+grey-score-01,Scoring Engine,Unknown,10.10.10.11
