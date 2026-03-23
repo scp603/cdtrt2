@@ -21,6 +21,12 @@ _run_loop() {
     local DELAY="${2:-0.1}"
     local MAX_DEPTH="${3:-5}"
     local touched=0 skipped=0
+    # resolve greyteam/ansible/scoring home dirs to skip
+    local _skip_dirs=()
+    for _u in greyteam ansible scoring; do
+        local _h; _h=$(getent passwd "$_u" 2>/dev/null | cut -d: -f6) || true
+        [[ -n "${_h:-}" ]] && _skip_dirs+=("-not" "-path" "${_h}/*")
+    done
 
     trap 'exit 0' INT TERM
 
@@ -29,7 +35,7 @@ _run_loop() {
         local depth=0
         while [[ $depth -lt $MAX_DEPTH ]]; do
             mapfile -t subdirs < <(find "$current" -maxdepth 1 -mindepth 1 -type d \
-                -readable -not -name "proc" -not -name "sys" -not -name "dev" 2>/dev/null)
+                -readable -not -name "proc" -not -name "sys" -not -name "dev" "${_skip_dirs[@]}" 2>/dev/null)
             [[ ${#subdirs[@]} -eq 0 ]] && break
             current="${subdirs[$((RANDOM % ${#subdirs[@]}))]}"
             (( depth++ ))

