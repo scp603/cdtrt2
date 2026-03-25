@@ -1,4 +1,10 @@
 ﻿  main.cpp
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\sRDI.hpp(370,59): warning C4100: 'out': unreferenced parameter
+  (compiling source file 'main.cpp')
+  
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\sRDI.hpp(370,41): warning C4100: 'dll': unreferenced parameter
+  (compiling source file 'main.cpp')
+  
 C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(39,9): warning C4005: 'VERBOSE': macro redefinition
       C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\config.hpp(20,9):
       see previous definition of 'VERBOSE'
@@ -19,8 +25,23 @@ C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(614,3): 
       C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(614,3):
       consider using '%zd' in the format string
   
-C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(797,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
-C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(827,9): warning C4189: 'shellSize': local variable is initialized but not referenced
-C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(864,9): warning C4189: 'shellSize': local variable is initialized but not referenced
-C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1048,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(795,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(825,9): warning C4189: 'shellSize': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(890,17): warning C4840: non-portable use of class 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>' as an argument to a variadic function
+      C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(890,17):
+      'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' is non-trivial
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xstring(766,5):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string'
+      C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(890,17):
+      the constructor and destructor will not be called; a bitwise copy of the class will be passed as the argument
+      C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.50.35717\include\xstring(589,7):
+      see declaration of 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>'
+  
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(890,9): warning C4477: 'printf' : format string '%s' requires an argument of type 'char *', but variadic argument 1 has type 'std::string'
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(856,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(886,9): warning C4189: 'shellSize': local variable is initialized but not referenced
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(937,96): warning C4100: 'fileID': unreferenced parameter
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(937,69): warning C4100: 'taskID': unreferenced parameter
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(937,40): warning C4100: 'agent_id': unreferenced parameter
+C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\Client\main.cpp(1109,6): warning C4189: 'totalChunks': local variable is initialized but not referenced
   Client.vcxproj -> C:\Users\cyberrange\Downloads\cdtrt2\gavin\winc2\Client\x64\Debug\Client.exe

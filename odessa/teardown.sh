@@ -8,8 +8,6 @@
 #   ./teardown.sh [OPTIONS]
 #
 # Options:
-#   -i, --identity FILE  SSH private key
-#   -p, --pass PASS      SSH password
 #   -u, --user USER      SSH username (default: root)
 #   -P, --port PORT      SSH port (default: 22)
 #       --no-sudo        Don't use sudo (already root)
@@ -30,7 +28,6 @@ err()  { echo -e "${RED}[!]${NC} $*" >&2; }
 hdr()  { echo -e "\n${CYAN}${BOLD}━━  $*  ━━${NC}\n"; }
 
 SSH_USER="root"
-SSH_KEY=""
 SSH_PASS=""
 SSH_PORT="22"
 NO_SUDO=0
@@ -44,8 +41,6 @@ usage() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -i|--identity)  SSH_KEY="$2";   shift 2 ;;
-        -p|--pass)      SSH_PASS="$2";  shift 2 ;;
         -u|--user)      SSH_USER="$2";  shift 2 ;;
         -P|--port)      SSH_PORT="$2";  shift 2 ;;
         --no-sudo)      NO_SUDO=1;      shift   ;;
@@ -56,14 +51,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$SSH_KEY" && -z "$SSH_PASS" ]]; then
-    read -rsp $'\033[0;36m[?]\033[0m SSH password (or Ctrl-C and use -i for key): ' SSH_PASS
-    echo
-fi
+read -rsp $'\033[0;36m[?]\033[0m SSH password: ' SSH_PASS
+echo
+export RT_SSH_PASS="$SSH_PASS"
+export RT_SUDO_PASS="$SSH_PASS"
 
 MASS_OPTS=(-u "$SSH_USER" -j "$MAX_JOBS")
-[[ -n "$SSH_KEY"  ]] && MASS_OPTS+=(-i "$SSH_KEY")
-[[ -n "$SSH_PASS" ]] && MASS_OPTS+=(-p "$SSH_PASS")
 [[ "$SSH_PORT" != "22" ]] && MASS_OPTS+=(-P "$SSH_PORT")
 [[ $NO_SUDO -eq 1 ]] && MASS_OPTS+=(--no-sudo)
 [[ $DRY_RUN -eq 1 ]] && MASS_OPTS+=(--dry-run)

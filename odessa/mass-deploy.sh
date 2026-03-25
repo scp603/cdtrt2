@@ -9,10 +9,7 @@
 #
 # Mass options:
 #   -u, --user USER      SSH username for all hosts (default: root)
-#   -p, --pass PASS      SSH password (passed to rt-ssh.sh -p)
-#   -i, --identity FILE  SSH private key (passed to rt-ssh.sh -i)
 #   -P, --port PORT      SSH port (default: 22)
-#   -S, --sudo-pass PASS Sudo password (passed to rt-ssh.sh -S)
 #       --no-sudo        Pass --no-sudo to rt-ssh.sh (use when SSH'd in as root)
 #   -j, --jobs N         Max parallel jobs (default: 9, one per Linux host)
 #       --hosts FILE     Plain-text file of IPs to target (one per line).
@@ -21,17 +18,18 @@
 #   -v, --verbose        Pass -v to rt-ssh.sh (show remote command on each host)
 #   -h, --help           Show this help and exit
 #
-# Examples:
-#   # Shadow cron on all hosts (SSH as root, key auth)
-#   ./mass-deploy.sh -i ~/.ssh/rt.key --no-sudo shadow-crond install
+# Authentication:
+#   You will be prompted to type the SSH/sudo password interactively.
 #
-#   # Ureadahead + SSH key injection, password auth
-#   ./mass-deploy.sh -u ubuntu -p 'S3cr3t' \
-#       ureadahead-persist install --key "ssh-ed25519 AAAA..."
+# Examples:
+#   # Shadow cron on all hosts
+#   ./mass-deploy.sh --no-sudo shadow-crond install
+#
+#   # Ureadahead on all hosts
+#   ./mass-deploy.sh -u ubuntu ureadahead-persist install
 #
 #   # Path-hijack system level, 4 at a time
-#   ./mass-deploy.sh -i ~/.ssh/rt.key --no-sudo -j 4 \
-#       path-hijack install --level system --key "ssh-ed25519 AAAA..."
+#   ./mass-deploy.sh --no-sudo -j 4 path-hijack install --level system
 #
 #   # Dry-run to preview commands
 #   ./mass-deploy.sh --dry-run -u root shadow-crond install
@@ -78,7 +76,6 @@ declare -A LINUX_HOSTS=(
 # ── defaults ─────────────────────────────────────────────────────────────────
 SSH_USER="root"
 SSH_PASS=""
-SSH_KEY=""
 SSH_PORT="22"
 SUDO_PASS=""
 NO_SUDO=0
@@ -97,10 +94,7 @@ POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -u|--user)       SSH_USER="$2";   shift 2 ;;
-        -p|--pass)       SSH_PASS="$2";   shift 2 ;;
-        -i|--identity)   SSH_KEY="$2";    shift 2 ;;
         -P|--port)       SSH_PORT="$2";   shift 2 ;;
-        -S|--sudo-pass)  SUDO_PASS="$2";  shift 2 ;;
         --no-sudo)       NO_SUDO=1;       shift   ;;
         -j|--jobs)       MAX_JOBS="$2";   shift 2 ;;
         --hosts)         HOSTS_FILE="$2"; shift 2 ;;
@@ -142,12 +136,20 @@ fi
 
 [[ ${#TARGETS[@]} -eq 0 ]] && { err "Target list is empty."; exit 1; }
 
+# ── prompt for password (or inherit from parent via env) ──────────────────────
+if [[ -n "${RT_SSH_PASS:-}" ]]; then
+    SSH_PASS="$RT_SSH_PASS"
+else
+    read -rsp $'\033[0;36m[?]\033[0m SSH/sudo password: ' SSH_PASS
+    echo
+fi
+SUDO_PASS="${RT_SUDO_PASS:-$SSH_PASS}"
+export RT_SSH_PASS="$SSH_PASS"
+export RT_SUDO_PASS="$SUDO_PASS"
+
 # ── build the rt-ssh.sh options array (shared across all hosts) ───────────────
 RT_OPTS=()
-[[ -n "$SSH_KEY"    ]] && RT_OPTS+=(-i "$SSH_KEY")
-[[ -n "$SSH_PASS"   ]] && RT_OPTS+=(-p "$SSH_PASS")
 [[ -n "$SSH_PORT"   ]] && RT_OPTS+=(-P "$SSH_PORT")
-[[ -n "$SUDO_PASS"  ]] && RT_OPTS+=(-S "$SUDO_PASS")
 [[ $NO_SUDO  -eq 1  ]] && RT_OPTS+=(--no-sudo)
 [[ $VERBOSE  -eq 1  ]] && RT_OPTS+=(-v)
 # "$@" now holds: <tool> [tool-args...]
@@ -163,7 +165,7 @@ trap 'rm -rf "$TMPDIR_BASE"' EXIT
 # ── print header ─────────────────────────────────────────────────────────────
 hdr "mass-deploy  →  ${TOOL_CMD[*]}"
 info "SSH user   : $SSH_USER"
-info "Auth       : $([ -n "$SSH_KEY" ] && echo "key ($SSH_KEY)" || echo "password")"
+info "Auth       : password (interactive)"
 info "Sudo       : $([ $NO_SUDO -eq 1 ] && echo "no (root SSH)" || echo "yes")"
 info "Parallelism: ${MAX_JOBS} jobs"
 info "Targets    : ${#TARGETS[@]} Linux hosts"

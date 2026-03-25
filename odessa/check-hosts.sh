@@ -6,11 +6,12 @@
 #
 # Options:
 #   -u, --user USER      SSH username (default: root)
-#   -p, --pass PASS      SSH password
-#   -i, --identity FILE  SSH private key
 #   -P, --port PORT      SSH port (default: 22)
-#       --sudo           Also test sudo -n id (confirm passwordless sudo)
+#       --sudo           Also test sudo -S id (confirm sudo with password)
 #   -h, --help           Show this help
+#
+# Authentication:
+#   You will be prompted to type the SSH password interactively.
 
 set -uo pipefail
 
@@ -38,7 +39,6 @@ declare -A LINUX_HOSTS=(
 
 SSH_USER="root"
 SSH_PASS=""
-SSH_KEY=""
 SSH_PORT="22"
 CHECK_SUDO=0
 
@@ -50,8 +50,6 @@ usage() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -u|--user)      SSH_USER="$2"; shift 2 ;;
-        -p|--pass)      SSH_PASS="$2"; shift 2 ;;
-        -i|--identity)  SSH_KEY="$2";  shift 2 ;;
         -P|--port)      SSH_PORT="$2"; shift 2 ;;
         --sudo)         CHECK_SUDO=1;  shift   ;;
         -h|--help)      usage 0                ;;
@@ -59,27 +57,19 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ── prompt for auth if nothing provided ───────────────────────────────────────
-if [[ -z "$SSH_PASS" && -z "$SSH_KEY" ]]; then
-    read -rsp $'\033[0;36m[?]\033[0m SSH password (or Ctrl-C and use -i for key): ' SSH_PASS
-    echo
-fi
+# ── prompt for password ────────────────────────────────────────────────────────
+read -rsp $'\033[0;36m[?]\033[0m SSH password: ' SSH_PASS
+echo
 
 # ── build shared SSH options ──────────────────────────────────────────────────
 SSH_OPTS=(
     -o StrictHostKeyChecking=no
     -o ConnectTimeout=5
+    -o PreferredAuthentications=password
+    -o PubkeyAuthentication=no
     -o BatchMode=no
     -p "$SSH_PORT"
 )
-if [[ -n "$SSH_KEY" ]]; then
-    SSH_OPTS+=(-i "$SSH_KEY")
-elif [[ -n "$SSH_PASS" ]]; then
-    SSH_OPTS+=(
-        -o PreferredAuthentications=password
-        -o PubkeyAuthentication=no
-    )
-fi
 
 # ── helper: run a command on a target ─────────────────────────────────────────
 ssh_run() {

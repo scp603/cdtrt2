@@ -6,11 +6,12 @@
 #
 # Options:
 #   -t, --target USER@HOST   SSH target (default: rootuser@100.69.82.61)
-#   -p, --pass PASS          SSH/sudo password
-#   -i, --identity FILE      SSH private key
 #   -P, --port PORT          SSH port (default: 22)
 #       --no-sudo            Don't use sudo
 #   -h, --help               Show this help
+#
+# Authentication:
+#   You will be prompted to type the SSH/sudo password interactively.
 
 set -uo pipefail
 
@@ -25,8 +26,6 @@ err()  { echo -e "${RED}[!]${NC} $*" >&2; }
 hdr()  { echo -e "\n${CYAN}${BOLD}━━  $*  ━━${NC}\n"; }
 
 TARGET="rootuser@100.69.82.61"
-SSH_PASS=""
-SSH_KEY=""
 SSH_PORT="22"
 NO_SUDO=0
 
@@ -38,8 +37,6 @@ usage() {
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -t|--target)   TARGET="$2";   shift 2 ;;
-        -p|--pass)     SSH_PASS="$2"; shift 2 ;;
-        -i|--identity) SSH_KEY="$2";  shift 2 ;;
         -P|--port)     SSH_PORT="$2"; shift 2 ;;
         --no-sudo)     NO_SUDO=1;     shift   ;;
         -h|--help)     usage 0                ;;
@@ -49,8 +46,6 @@ done
 
 # build shared rt-ssh args
 RTOPTS=(-t "$TARGET" -P "$SSH_PORT")
-[[ -n "$SSH_KEY"  ]] && RTOPTS+=(-i "$SSH_KEY")
-[[ -n "$SSH_PASS" ]] && RTOPTS+=(-p "$SSH_PASS")
 [[ $NO_SUDO -eq 1 ]] && RTOPTS+=(--no-sudo)
 
 rt() { "$SSH_TOOL" "${RTOPTS[@]}" "$@"; }
@@ -125,12 +120,11 @@ test_tool() {
     fi
 }
 
-# ── prompt for pass if needed ─────────────────────────────────────────────────
-if [[ -z "$SSH_PASS" && -z "$SSH_KEY" ]]; then
-    read -rsp $'\033[0;36m[?]\033[0m SSH/sudo password: ' SSH_PASS
-    echo
-    RTOPTS+=(-p "$SSH_PASS")
-fi
+# ── prompt for password ────────────────────────────────────────────────────────
+read -rsp $'\033[0;36m[?]\033[0m SSH/sudo password: ' SSH_PASS
+echo
+export RT_SSH_PASS="$SSH_PASS"
+export RT_SUDO_PASS="$SSH_PASS"
 
 info "Target: $TARGET"
 echo
