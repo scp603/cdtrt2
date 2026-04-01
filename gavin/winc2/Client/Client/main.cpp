@@ -1,4 +1,9 @@
-﻿#pragma once
+/*
+ * Gavin McConnell
+ * gwm8432@rit.edu
+ */
+
+#pragma once
 
 #define WIN32_LEAN_AND_MEAN
 #define CMD_TIMEOUT 10000
